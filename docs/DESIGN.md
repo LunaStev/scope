@@ -16,7 +16,7 @@ At widths below 720 px the inspector yields to the map. Numeric values use actua
 
 The active graphics renderer appears at the far right of the existing footer as 9 pt muted text. It has no badge background, new row, icon, floating overlay or unsolicited popup. Its allocated width never exceeds 240 logical pixels or 28% of the available footer width; long names are ellipsized using actual font measurements. Progress has a separate clipped region. Secondary performance telemetry yields first when the window becomes narrow.
 
-The complete renderer and vendor strings wrap in the inspector's Graphics renderer section, below repository metrics. The app reads Makepad's cached active-backend information, not a list of installed GPUs. Unknown names are shown as not reported; recognised software-renderer names remain visible without claiming hardware acceleration. Unchanged names and their width-fitted footer text are reused rather than polled through driver calls or external commands.
+The complete renderer and vendor strings wrap in the inspector's Graphics renderer section, below repository metrics. The app first uses Makepad's cached active-backend information. When native Linux backends leave it unset, a bounded startup probe reads the already-current GLX/EGL context without creating or switching contexts. A successful result is cached; no installed-GPU enumeration, external commands or recurring driver polling is used. Unknown names stay not reported. Recognised software-renderer names remain visible without claiming hardware acceleration.
 
 ## Map labels and density
 
