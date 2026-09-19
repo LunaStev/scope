@@ -1,6 +1,7 @@
-//! A single real-source rendering path at every camera scale.
+//! A single real-source rendering path with retained GPU geometry.
 pub mod palette;
 pub mod painter;
+mod cache;
 mod map;
 mod document;
 pub use painter::{MapPainter, RenderStats};

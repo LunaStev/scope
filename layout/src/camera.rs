@@ -3,8 +3,6 @@ use crate::source::READING_SIZE;
 #[derive(Clone, Copy, Debug)]
 pub struct Camera { pub scale: f64, pub x: f64, pub y: f64 }
 impl Default for Camera { fn default() -> Self { Self { scale: 1.0, x: 0.0, y: 0.0 } } }
-/// Approximately 3.7x the previous logarithmic scroll sensitivity, anchored to
-/// the cursor. Exponential scaling keeps zoom-in and zoom-out symmetric.
 pub fn wheel_zoom_factor(delta: f64) -> f64 { (-delta * 0.022).clamp(-0.7,0.7).exp() }
 impl Camera {
     pub fn fit(&mut self, world: Box2, viewport: Box2) {
@@ -20,10 +18,10 @@ impl Camera {
         self.scale = (self.scale*factor).clamp(0.00001,1_000_000.0);
         self.x=x-wx*self.scale; self.y=y-wy*self.scale;
     }
-    pub fn read_at(&mut self, page: SourceLayout, x: f64, y: f64) {
+    pub fn read_at(&mut self, page: &SourceLayout, x: f64, y: f64) {
         self.zoom_at((READING_SIZE / (page.font_size*self.scale)).max(1.0),x,y);
     }
-    pub fn read_page(&mut self, page: SourceLayout, viewport: Box2) {
+    pub fn read_page(&mut self, page: &SourceLayout, viewport: Box2) {
         self.fit(page.content,viewport);
         self.scale=self.scale.max(READING_SIZE/page.font_size).clamp(0.00001,1_000_000.0);
         self.x=viewport.x+24.0-page.content.x*self.scale;
@@ -49,7 +47,7 @@ mod tests {
     #[test] fn double_click_reaches_readable_text_without_reflow() {
         let page=SourceLayout::new(Box2::new(0.0,0.0,400.0,200.0),1000,80);
         let mut c=Camera::default();let anchor=c.unproject(20.0,30.0);
-        c.read_at(page,20.0,30.0);
+        c.read_at(&page,20.0,30.0);
         assert!((c.scale*page.font_size-READING_SIZE).abs()<1e-10);
         let after=c.unproject(20.0,30.0);
         assert!((anchor.0-after.0).abs()<1e-10);

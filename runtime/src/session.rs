@@ -4,9 +4,11 @@ use model::{AreaMetric, Tree};
 use layout::{self, Box2, Camera, SourceLayout};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, mpsc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, mpsc, atomic::{AtomicBool, AtomicU64, Ordering}};
 
+static NEXT_SCENE: AtomicU64 = AtomicU64::new(1);
 pub struct Snapshot {
+    pub generation: u64,
     pub tree: Arc<Tree>,
     pub rectangles: Vec<Box2>,
     pub pages: Vec<Option<SourceLayout>>,
@@ -15,9 +17,9 @@ impl Snapshot {
     pub fn new(tree: Arc<Tree>, metric: AreaMetric) -> Self {
         let rectangles = layout::tree_layout(&tree, metric);
         let pages = tree.nodes.iter().zip(&rectangles).map(|(node, &bounds)| {
-            node.file.as_ref().map(|file| SourceLayout::new(bounds, file.document.lines.len(), file.document.max_columns))
+            node.file.as_ref().map(|file| SourceLayout::for_document(bounds, &file.document))
         }).collect();
-        Self { tree, rectangles, pages }
+        Self { generation: NEXT_SCENE.fetch_add(1, Ordering::Relaxed), tree, rectangles, pages }
     }
 }
 type JobResult = Result<(Snapshot, AreaMetric), String>;
@@ -68,10 +70,7 @@ impl Session {
         });
     }
     pub fn refresh(&mut self) { self.open(self.root.clone(), self.options.clone(), self.wake); }
-    pub fn cycle_metric(&mut self) {
-        self.requested_metric = self.requested_metric.next();
-        self.relayout();
-    }
+    pub fn cycle_metric(&mut self) { self.requested_metric = self.requested_metric.next(); self.relayout(); }
     fn relayout(&mut self) {
         let Some(snapshot) = &self.snapshot else { return; };
         let tree = snapshot.tree.clone(); let metric = self.requested_metric; let wake = self.wake;
@@ -112,9 +111,8 @@ impl Session {
     pub fn focus(&mut self, id: usize) {
         if self.snapshot.as_ref().is_some_and(|s| id < s.tree.nodes.len()) { self.selected = Some(id); self.focus_pending = Some(id); }
     }
-    /// Focus a file at readable scale at the pointer, without changing glyph layout.
     pub fn read_at(&mut self, id: usize, x: f64, y: f64) {
-        let page = self.snapshot.as_ref().and_then(|s| s.pages.get(id)).copied().flatten();
+        let page = self.snapshot.as_ref().and_then(|s| s.pages.get(id)).and_then(Option::as_ref);
         if let Some(page) = page {
             self.selected = Some(id); self.focus_pending = None; self.camera.read_at(page, x, y);
         } else { self.focus(id); }
@@ -122,7 +120,7 @@ impl Session {
     pub fn apply_focus(&mut self, viewport: Box2) {
         let Some(id) = self.focus_pending.take() else { return; };
         let Some(snapshot) = &self.snapshot else { return; };
-        if let Some(Some(page)) = snapshot.pages.get(id) { self.camera.read_page(*page, viewport); }
+        if let Some(Some(page)) = snapshot.pages.get(id) { self.camera.read_page(page, viewport); }
         else if let Some(&bounds) = snapshot.rectangles.get(id) { self.camera.fit(bounds, viewport); }
     }
     pub fn parent(&mut self) {
@@ -134,30 +132,24 @@ impl Session {
         layout::hit_test(&s.tree, &s.rectangles, x, y)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test] fn source_is_available_in_the_initial_snapshot() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("main.rs");
-        std::fs::write(&path, "fn main() {}\n").unwrap();
-        let tree = scan(root.path(), &ScanOptions::default(), &AtomicBool::new(false)).unwrap();
-        let snapshot = Snapshot::new(Arc::new(tree), AreaMetric::NonBlank);
-        std::fs::write(&path, "changed after scan").unwrap();
-        let id = snapshot.tree.nodes.iter().position(|n| n.name == "main.rs").unwrap();
-        let file = snapshot.tree.nodes[id].file.as_ref().unwrap();
-        assert_eq!(file.document.line(0), "fn main() {}");
-        assert!(snapshot.pages[id].is_some());
-        assert!(snapshot.tree.source_memory_bytes > 0);
+        let root = tempfile::tempdir().unwrap(); let path=root.path().join("main.rs");
+        std::fs::write(&path,"fn main() {}\n").unwrap();
+        let tree=scan(root.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap();
+        let snapshot=Snapshot::new(Arc::new(tree),AreaMetric::NonBlank);
+        std::fs::write(&path,"changed after scan").unwrap();
+        let id=snapshot.tree.nodes.iter().position(|n|n.name=="main.rs").unwrap();
+        assert_eq!(snapshot.tree.nodes[id].file.as_ref().unwrap().document.line(0),"fn main() {}");
+        assert!(snapshot.pages[id].is_some());assert!(snapshot.tree.source_memory_bytes>0);
     }
-    #[test] fn changing_area_reuses_the_same_source_documents() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("x.rs"), "let x = 1;\n").unwrap();
-        let tree = Arc::new(scan(root.path(), &ScanOptions::default(), &AtomicBool::new(false)).unwrap());
-        let a = Snapshot::new(tree.clone(), AreaMetric::Lines);
-        let b = Snapshot::new(tree.clone(), AreaMetric::Bytes);
-        assert!(Arc::ptr_eq(&a.tree, &b.tree));
-        assert_eq!(a.pages.len(), b.pages.len());
+    #[test] fn changing_area_reuses_documents_but_invalidates_gpu_scene() {
+        let root=tempfile::tempdir().unwrap();std::fs::write(root.path().join("x.rs"),"let x = 1;\n").unwrap();
+        let tree=Arc::new(scan(root.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap());
+        let a=Snapshot::new(tree.clone(),AreaMetric::Lines);let b=Snapshot::new(tree.clone(),AreaMetric::Bytes);
+        assert!(Arc::ptr_eq(&a.tree,&b.tree));assert_ne!(a.generation,b.generation);
+        assert_eq!(a.pages.len(),b.pages.len());
     }
 }

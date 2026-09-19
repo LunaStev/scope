@@ -10,48 +10,55 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt
       - name: System libraries
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb imagemagick xdotool
-      - name: Module tests
+      - name: Module tests and root boundaries
         run: |
-          cargo +stable test --workspace
+          set -o pipefail
+          mkdir -p evidence
+          cargo +stable test --workspace 2>&1 | tee evidence/tests.log
           cargo +stable test -p scope --no-default-features
-      - name: Root module boundaries
-        run: python3 scripts/check_architecture.py
-      - name: Build native application
-        run: cargo +stable build -p scope
-      - name: Inventory accounting test
+          python3 scripts/check_architecture.py
+      - name: Native application and accounting
         run: |
+          cargo +stable build -p scope
           ./target/debug/scope --json . > /tmp/scope-inventory.json
           python3 scripts/check_report.py /tmp/scope-inventory.json
-      - name: Continuous source and camera regression
+      - name: Retained geometry and compact UI
         run: bash scripts/gui_smoke.sh
+      - name: Matched release benchmark
+        run: |
+          cargo +stable build --release -p scope
+          cp target/release/scope /tmp/scope-after
+          baseline=$(mktemp -d /tmp/scope-before.XXXXXX)
+          git archive 455a32084163cd17b42fb219781d7197df322a49 | tar -x -C "$baseline"
+          python3 - "$baseline" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])/'render/src/map.rs'
+          s=p.read_text();needle='stats.cpu_submit_ms = start.elapsed().as_secs_f64()*1000.0;'
+          assert needle in s
+          p.write_text(s.replace(needle,needle+'\n        eprintln!("scope perf cpu_ms={:.3}",stats.cpu_submit_ms);'))
+          PY
+          CARGO_TARGET_DIR="$PWD/target" cargo +stable build --release -p scope --manifest-path "$baseline/Cargo.toml"
+          cp target/release/scope /tmp/scope-before-binary
+          xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/performance.py /tmp/scope-before-binary /tmp/scope-after
       - name: Preserve evidence
         if: always()
         run: |
-          cp /tmp/scope-inventory.json inventory.json 2>/dev/null || true
-          cp /tmp/scope-fixture.log gui.log 2>/dev/null || true
-          cp /tmp/scope-before-zoom.log overview.log 2>/dev/null || true
-          cp /tmp/scope-repository.log repository.log 2>/dev/null || true
-          git archive --format=tar HEAD > source.tar
-      - name: Upload validation
+          mkdir -p evidence
+          cp /tmp/scope-inventory.json evidence/inventory.json 2>/dev/null || true
+          git archive --format=tar HEAD > evidence/source.tar
+          cp Cargo.lock evidence/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: scope-linux-smoke
-          path: |
-            gui.log
-            overview.log
-            repository.log
-            scope-source-overview.png
-            scope-source-read.png
-            scope-overview.png
-            inventory.json
-            source.tar
-            Cargo.lock
-          if-no-files-found: ignore
+          name: scope-validation
+          path: evidence
           retention-days: 7
