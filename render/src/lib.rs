@@ -1,5 +1,6 @@
 //! Retained source tiles and independently scheduled first-paint work.
 pub mod cache;
+pub mod device;
 pub mod palette;
 pub mod painter;
 mod budget;

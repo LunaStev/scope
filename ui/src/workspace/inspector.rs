@@ -26,6 +26,7 @@ impl Workspace{
         for warning in r.warnings.iter().take(2){for line in f::wrap(warning,(width/6.5) as usize).into_iter().take(3){self.chrome.text(cx,x,y,9.0,p::unknown(),&line);y+=17.0;}}
         if let Some(error)=self.state.session.documents.error(id).map(str::to_owned){for line in f::wrap(&error,(width/6.5) as usize){self.chrome.text(cx,x,y,9.0,p::unknown(),&line);y+=17.0;}}
         y+=20.0;self.chrome.text(cx,x,y,9.0,p::muted(),"Code + comments + blank + unclassified");y+=17.0;self.chrome.text(cx,x,y,9.0,p::muted(),"= physical lines. Counts are not estimates.");y+=32.0;
+        y=self.graphics_details(cx,x,y,width);
         self.state.panel_height=y-top;
         if self.state.panel_height>b.h{let h=(b.h*b.h/self.state.panel_height).max(24.0);let offset=self.state.panel_scroll/(self.state.panel_height-b.h).max(1.0)*(b.h-h);self.chrome.fill(cx,Box2::new(b.x+b.w-4.0,b.y+offset,2.0,h),p::muted());}
     }

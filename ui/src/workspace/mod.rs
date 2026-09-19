@@ -8,6 +8,7 @@ mod summary;
 mod inspector;
 mod frame;
 mod input;
+mod status;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -37,10 +38,11 @@ pub struct ViewState {
     panel_scroll: f64,
     panel_height: f64,
     frame: RenderStats,
+    graphics: status::GraphicsLabel,
 }
 impl Default for ViewState {
     fn default()->Self {
-        Self {session:Session::default(),viewport:Box2::default(),panel:Box2::default(),drag_at:None,details:true,panel_scroll:0.0,panel_height:0.0,frame:RenderStats::default()}
+        Self {session:Session::default(),viewport:Box2::default(),panel:Box2::default(),drag_at:None,details:true,panel_scroll:0.0,panel_height:0.0,frame:RenderStats::default(),graphics:status::GraphicsLabel::default()}
     }
 }
 impl Workspace {
