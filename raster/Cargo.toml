@@ -1,14 +1,18 @@
 [package]
-name = "runtime"
+name = "raster"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
 model.workspace = true
-analysis.workspace = true
 layout.workspace = true
-raster.workspace = true
+analysis.workspace = true
+language.workspace = true
+fontdue = "=0.9.3"
+blake3 = "1"
+png = "0.17"
+tempfile.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
+serde_json.workspace = true

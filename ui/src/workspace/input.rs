@@ -3,6 +3,9 @@ use makepad_widgets::*;
 use ::layout::wheel_zoom_factor;
 impl Workspace {
     pub(super) fn input(&mut self,cx:&mut Cx,event:&Event) {
+        // Workers wake the event loop; no busy draw loop is needed while the
+        // complete map or an off-screen refinement is being prepared.
+        if self.map.poll_images()||(!self.map.maps.ready&&self.map.maps.generation!=0){self.redraw_view(cx);}
         if self.state.session.poll(){self.redraw_view(cx);}
         if matches!(event,Event::NextFrame(_))&&self.state.frame.needs_redraw{self.redraw_view(cx);}
         match event.hits(cx,self.draw_bg.area()) {

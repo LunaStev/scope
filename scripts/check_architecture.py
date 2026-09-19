@@ -2,13 +2,13 @@
 import json
 from pathlib import Path
 import subprocess
-
 root = Path(__file__).resolve().parents[1]
 allowed = {
     "model": set(), "language": {"model"},
     "analysis": {"model", "language"}, "layout": {"model"},
-    "runtime": {"model", "analysis", "layout"},
-    "render": {"model", "layout", "runtime"},
+    "raster": {"model", "layout", "analysis", "language"},
+    "runtime": {"model", "analysis", "layout", "raster"},
+    "render": {"model", "layout", "runtime", "raster"},
     "ui": {"model", "analysis", "layout", "runtime", "render"},
     "scope": {"model", "analysis", "ui"},
 }
@@ -22,6 +22,6 @@ for name, package in packages.items():
         target = dependency["name"]
         if target in allowed:
             assert target in allowed[name], f"Forbidden dependency: {name} -> {target}"
-        if name in {"model", "language", "analysis", "layout", "runtime"}:
+        if name in {"model", "language", "analysis", "layout", "raster", "runtime"}:
             assert not target.startswith("makepad"), f"GUI dependency leaked into {name}"
 print("Root module names, manifest paths and dependency boundaries verified.")

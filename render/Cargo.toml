@@ -7,5 +7,6 @@ publish.workspace = true
 [dependencies]
 model.workspace = true
 layout.workspace = true
+raster.workspace = true
 runtime.workspace = true
 makepad-widgets.workspace = true

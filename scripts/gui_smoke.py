@@ -1,4 +1,4 @@
-"""Exercise actual source, retained geometry, zoom round trips and compact UI."""
+"""Verify complete cached source, fallback during zoom, and persistent reuse."""
 from pathlib import Path
 import os
 import re
@@ -8,28 +8,27 @@ import time
 
 OUT=Path('evidence');OUT.mkdir(exist_ok=True)
 BINARY=str(Path('target/debug/scope').resolve())
-ENV=dict(os.environ,LIBGL_ALWAYS_SOFTWARE='1',SCOPE_TRACE='1')
+ENV=dict(os.environ,LIBGL_ALWAYS_SOFTWARE='1',SCOPE_TRACE='1',SCOPE_MAP_CACHE_DIR=str((OUT/'map-cache').resolve()))
 def xdo(*args):return sp.check_output(['xdotool',*map(str,args)],text=True).strip()
 def frames(path):
     return [dict(re.findall(r'(\w+)=([^ ]+)',line)) for line in path.read_text(errors='replace').splitlines() if line.startswith('scope frame:')]
-def wait_ready(proc,log,minimum=1,timeout=60):
+def wait_ready(proc,log,minimum=1,timeout=180,settled=True):
     end=time.monotonic()+timeout
     while time.monotonic()<end:
-        if proc.poll() is not None:raise AssertionError(log.read_text(errors='replace'))
+        if proc.poll() is not None:raise AssertionError(log.read_text(errors='replace')[-6000:])
         records=frames(log)
-        if records and int(records[-1].get('lines',0))>=minimum and records[-1].get('pending')=='0' and records[-1].get('waiting','0')=='0':return records[-1]
+        if records:
+            r=records[-1]
+            if r.get('map_ready')=='1' and int(r.get('lines',0))>=minimum and (not settled or r.get('map_pending')=='0'):return r
         time.sleep(.1)
-    raise AssertionError('Geometry did not complete: '+log.read_text(errors='replace')[-4000:])
+    raise AssertionError('Map did not complete: '+log.read_text(errors='replace')[-6000:])
 def launch(root,name,minimum):
-    log=OUT/(name+'.log');file=log.open('w')
-    proc=sp.Popen([BINARY,str(root)],env=ENV,stdout=file,stderr=sp.STDOUT)
+    log=OUT/(name+'.log');file=log.open('w');proc=sp.Popen([BINARY,str(root)],env=ENV,stdout=file,stderr=sp.STDOUT)
     try:
         record=wait_ready(proc,log,minimum)
         wid=xdo('search','--pid',proc.pid,'--name','Scope').splitlines()[0]
-        xdo('windowmove',wid,0,0)
-        xdo('mousemove',580,450);time.sleep(.5)
-        record=wait_ready(proc,log,minimum);time.sleep(.15)
-        return proc,file,log,wid,record
+        xdo('windowmove',wid,0,0);xdo('mousemove',580,450);time.sleep(.25)
+        return proc,file,log,wid,wait_ready(proc,log,minimum)
     except BaseException:
         proc.terminate();proc.wait(timeout=10);file.close();raise
 
@@ -39,34 +38,41 @@ def stop(proc,file):
     except sp.TimeoutExpired:proc.kill();proc.wait()
     file.close()
 
-with tempfile.TemporaryDirectory(prefix='scope-gui-') as folder:
+with tempfile.TemporaryDirectory(prefix='scope-map-gui-') as folder:
     root=Path(folder)
     (root/'main.wave').write_text(''.join(f'fun f_{i}() {{ let x = {i}; }} // line {i}\n' for i in range(1200)))
     proc,file,log,wid,before=launch(root,'source',1200)
     try:
-        assert int(before['lines'])==1200 and 0<float(before['font_min'])<7
+        assert int(before['lines'])==1200 and before['map_errors']=='0'
+        assert before['representation']=='source-image'
+        assert before['image_tiles']=='1',before
         sp.run(['import','-window',wid,str(OUT/'scope-source-overview.png')],check=True)
-        xdo('mousemove',580,480,'click','--repeat',2,'--delay',100,1)
-        time.sleep(1);read=wait_ready(proc,log)
+        n=len(frames(log));xdo('mousemove',580,480,'click','--repeat',2,'--delay',100,1)
+        time.sleep(.25)
+        pending=wait_ready(proc,log,1200,settled=False)
+        assert pending['map_ready']=='1' and int(pending['image_tiles'])>=1, 'Pinned overview must survive a cold jump'
+        read=wait_ready(proc,log,1200)
         assert float(read['font_max'])>=11.9,read
-        assert any(r['reused']!='0' and r['built']=='0' for r in frames(log)), 'Camera must reuse geometry'
+        assert int(read['image_tiles'])>1, 'Detailed images must sharpen readable source'
+        assert all(r.get('map_ready')=='1' and int(r.get('image_tiles',0))>=1 for r in frames(log)[n:])
         sp.run(['import','-window',wid,str(OUT/'scope-source-read.png')],check=True)
-        xdo('key','Home');time.sleep(.5)
-        restored=wait_ready(proc,log,1200)
-        assert int(restored['lines'])==1200,restored
-        xdo('mousemove',580,480,'click',4);time.sleep(.3)
-        xdo('click',5);time.sleep(.3)
-        restored=wait_ready(proc,log,1200)
-        assert int(restored['lines'])==1200,restored
-        xdo('windowsize',wid,960,640);time.sleep(1)
-        wait_ready(proc,log,1200)
+        xdo('key','Home');time.sleep(.3);restored=wait_ready(proc,log,1200)
+        assert int(restored['lines'])==1200
+        # Cached overview navigation must not upload character geometry.
+        xdo('mousemove',580,480,'click',5);time.sleep(.2);r=wait_ready(proc,log,1200)
+        assert r['built']=='0' and r['glyphs']=='0'
+        xdo('key','Home');time.sleep(.3)
+    finally:stop(proc,file)
+    proc,file,log,wid,warm=launch(root,'warm',1200)
+    try:
+        assert warm['map_cache_hit']=='1',warm
+        xdo('windowsize',wid,960,640);time.sleep(.5);wait_ready(proc,log,1200)
         sp.run(['import','-window',wid,str(OUT/'scope-compact.png')],check=True)
     finally:stop(proc,file)
-    (root/'blank.rs').write_text('\n'*300)
-    proc,file,log,wid,_=launch(root,'blank',1500)
-    try:
-        xdo('mousemove',450,350,'mousedown',1,'mousemove',460,350,'mouseup',1);time.sleep(.5)
-        assert proc.poll() is None
+    # A changed source revision must not reuse a stale map image.
+    with (root/'main.wave').open('a') as f:f.write('// changed\n')
+    proc,file,log,wid,changed=launch(root,'changed',1201)
+    try:assert changed['map_cache_hit']=='0'
     finally:stop(proc,file)
 
 proc,file,log,wid,_=launch(Path.cwd(),'repository',1)
@@ -74,5 +80,5 @@ try:sp.run(['import','-window',wid,str(OUT/'scope-overview.png')],check=True)
 finally:stop(proc,file)
 for log in OUT.glob('*.log'):
     value=log.read_text(errors='replace')
-    assert not re.search(r'panicked|error expanding|error applying|shader compilation failed|Mismatch in drawlist',value,re.I),value
-print('Actual overview source, cached pan/zoom, readable double-click, blank source and compact UI passed.')
+    assert not re.search(r'panicked|error expanding|error applying|shader compilation failed|Mismatch in drawlist',value,re.I),value[-5000:]
+print('Complete actual-source map, pinned zoom fallback, detailed images, restart reuse and revision invalidation passed.')

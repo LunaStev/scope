@@ -1,5 +1,5 @@
 [workspace]
-members = ["app", "model", "language", "analysis", "layout", "runtime", "render", "ui"]
+members = ["app", "model", "language", "analysis", "layout", "raster", "runtime", "render", "ui"]
 default-members = ["app"]
 resolver = "2"
 
@@ -14,6 +14,7 @@ model = { path = "model" }
 language = { path = "language" }
 analysis = { path = "analysis" }
 layout = { path = "layout" }
+raster = { path = "raster" }
 runtime = { path = "runtime" }
 render = { path = "render" }
 ui = { path = "ui" }

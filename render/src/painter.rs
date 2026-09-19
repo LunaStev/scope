@@ -1,11 +1,14 @@
 use makepad_widgets::*;
 use ::layout::Box2;
-use crate::{cache::GeometryCache,node::DrawNode};
+use crate::{cache::GeometryCache,node::DrawNode,image_map::{DrawMapImage,ImageMap}};
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use crate::node::DrawNode;
+    use crate::image_map::DrawMapImage;
     pub MapPainter = {{MapPainter}} {
+        map_font: dep("crate://makepad-widgets/resources/LiberationMono-Regular.ttf")
+        image: <DrawMapImage> {}
         quad: {color: #171b20}
         node: <DrawNode> {}
         label: {text_style: <THEME_FONT_REGULAR> {font_size: 11}, color: #d9dfe4}
@@ -35,13 +38,17 @@ live_design! {
 }
 #[derive(Live)]
 pub struct MapPainter {
+    #[live] pub map_font:LiveDependency,
+    #[live] pub image:DrawMapImage,
     #[live] pub quad:DrawColor,
     #[live] pub node:DrawNode,
     #[live] pub label:DrawText,
     #[live] pub code:DrawText,
     #[rust] pub cache:GeometryCache,
+    #[rust] pub images:ImageMap,
+    #[rust] pub maps:runtime::maps::Maps,
 }
-impl LiveHook for MapPainter {fn after_apply(&mut self,_cx:&mut Cx,_apply:&mut Apply,_index:usize,_nodes:&[LiveNode]){self.cache.clear();}}
+impl LiveHook for MapPainter {fn after_apply(&mut self,_cx:&mut Cx,_apply:&mut Apply,_index:usize,_nodes:&[LiveNode]){self.cache.clear();self.images.clear();self.maps.reset();}}
 impl LiveRegister for MapPainter {fn live_register(_cx:&mut Cx){}}
 #[derive(Clone,Copy,Debug,Default)]
 pub struct RenderStats {
@@ -51,8 +58,11 @@ pub struct RenderStats {
     pub node_visits:usize,pub label_visits:usize,pub tile_checks:usize,pub built_glyphs:usize,
     pub built_layers:usize,pub reused_layers:usize,pub needs_redraw:bool,
     pub min_font:f64,pub max_font:f64,pub cpu_submit_ms:f64,
+    pub map_ready:bool,pub map_completed:u64,pub map_total:u64,pub map_cache_hit:bool,
+    pub image_tiles:usize,pub texture_uploads:usize,pub image_pending:usize,pub map_errors:u64,
 }
 impl MapPainter {
+    pub fn poll_images(&mut self)->bool{self.maps.poll()}
     pub fn fill(&mut self,cx:&mut Cx2d,b:Box2,color:Vec4){if b.w<=0.0||b.h<=0.0{return;}self.quad.color=color;self.quad.draw_abs(cx,Rect{pos:dvec2(b.x,b.y),size:dvec2(b.w,b.h)});}
     pub fn text(&mut self,cx:&mut Cx2d,x:f64,y:f64,size:f32,color:Vec4,text:&str){self.label.color=color;self.label.text_style.font_size=size;self.label.font_scale=1.0;self.label.draw_abs(cx,dvec2(x,y),text);}
     pub fn text_right(&mut self,cx:&mut Cx2d,right:f64,y:f64,size:f32,color:Vec4,text:&str){self.label.text_style.font_size=size;let measured=self.label.layout(cx,0.0,0.0,None,false,Align::default(),text);self.text(cx,right-measured.size_in_lpxs.width as f64,y,size,color,text);}

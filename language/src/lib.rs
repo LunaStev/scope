@@ -5,6 +5,7 @@ pub mod detection;
 pub mod registry;
 pub mod metrics;
 pub mod highlight;
+pub mod stream;
 mod backend;
 mod shebang;
 pub mod wave;
