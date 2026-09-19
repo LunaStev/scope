@@ -19,6 +19,12 @@ pub struct MapPainter {
     #[live] pub code: DrawText,
 }
 
+// This is a reusable drawing resource, not a Widget. Register it explicitly
+// instead of relying on the Widget derive to provide LiveRegister.
+impl LiveRegister for MapPainter {
+    fn live_register(_cx: &mut Cx) {}
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RenderStats {
     pub visible_nodes: usize,
