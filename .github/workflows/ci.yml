@@ -45,7 +45,9 @@ jobs:
           cp Cargo.lock "$before/Cargo.lock"
           cp Cargo.lock "$after/Cargo.lock"
           python3 scripts/prepare_reveal_benchmark.py "$before" "$after"
-          cargo +stable metadata --offline --format-version 1 --manifest-path "$before/Cargo.toml" > /dev/null
+          # Resolve local workspace edges without asking metadata to download
+          # source archives for unrelated Android/Windows targets.
+          cargo +stable generate-lockfile --offline --manifest-path "$before/Cargo.toml"
           python3 - "$before/Cargo.lock" "$after/Cargo.lock" <<'PY'
           import sys,tomllib
           def packages(path):
