@@ -31,11 +31,11 @@ jobs:
           cargo +stable build -p scope 2>&1 | tee evidence/build.log
           ./target/debug/scope --json . > /tmp/scope-inventory.json
           python3 scripts/check_report.py /tmp/scope-inventory.json
-      - name: Retained geometry and compact UI
+      - name: Complete image map and cached zoom
         run: |
           set -o pipefail
           bash scripts/gui_smoke.sh 2>&1 | tee evidence/gui-test.log
-      - name: Post-index first-paint and input regression
+      - name: Complete-map and navigation benchmark
         run: |
           set -o pipefail
           before=$(mktemp -d /tmp/scope-reveal-before.XXXXXX)
@@ -45,6 +45,17 @@ jobs:
           cp Cargo.lock "$before/Cargo.lock"
           cp Cargo.lock "$after/Cargo.lock"
           python3 scripts/prepare_reveal_benchmark.py "$before" "$after"
+          # Workspace dependency edges changed. Reconcile the baseline's local
+          # lockfile offline, then require identical shared registry versions.
+          cargo +stable metadata --offline --format-version 1 --manifest-path "$before/Cargo.toml" > /dev/null
+          python3 - "$before/Cargo.lock" "$after/Cargo.lock" <<'PY'
+          import sys,tomllib
+          def packages(path):
+              with open(path,'rb') as f: data=tomllib.load(f)
+              return {(p['name'],p['version'],p.get('source')) for p in data['package'] if 'source' in p}
+          baseline,current=map(packages,sys.argv[1:])
+          assert baseline <= current, f'Unmatched baseline dependency versions: {baseline-current}'
+          PY
           CARGO_TARGET_DIR="$before/target" cargo +stable build --locked --release --manifest-path "$before/Cargo.toml" -p scope 2>&1 | tee evidence/before-build.log
           CARGO_TARGET_DIR="$after/target" cargo +stable build --locked --release --manifest-path "$after/Cargo.toml" -p scope 2>&1 | tee evidence/after-build.log
           xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/reveal_benchmark.py "$before/target/release/scope" "$after/target/release/scope" 2>&1 | tee evidence/reveal-test.log
@@ -67,5 +78,7 @@ jobs:
         if: always()
         with:
           name: scope-validation
-          path: evidence
+          path: |
+            evidence
+            !evidence/map-cache
           retention-days: 7

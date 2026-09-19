@@ -1,35 +1,27 @@
 # Compact explorer design
 
-The source map is the primary surface. Avoid large dashboard cards, duplicate branding and controls for actions that do not exist.
+The source map is the primary surface: 44 px repository toolbar, 38 px navigation/search row, 30 px summary, canvas with optional 248–280 px inspector, and an unchanged 24 px footer. No dashboard cards, floating device badges or unsolicited popups.
 
-## Window hierarchy
+## Continuous navigation
 
-- 44 px repository row: Scope, path, Open, Re-index and Details.
-- 38 px navigation row: Overview, Up, Read, path search, Area and Source.
-- 30 px one-line workspace summary.
-- Map filling the remaining body; optional independently scrolling 248–280 px inspector.
-- 24 px footer for pending work, detail limits, cached reuse, CPU submission time and the active renderer name.
+A complete actual-code image is prepared before the canvas is disclosed. The loading surface separates indexing from map preparation. Once visible, the overview is always retained. A cold zoom uses the prepared parent immediately; detailed images fade in at the identical world coordinates. The code does not turn into bars or reflow during camera movement. Rapid uncached jumps may be temporarily soft, not empty.
 
-At widths below 720 px the inspector yields to the map. Numeric values use actual measured text width rather than character-count estimates. Tests capture full-size and 960 x 640 windows.
+The uploaded MP4 reference informed compact controls, thin hierarchy edges, tight code columns and continuous exploration. Scope does not claim the reference's AST subdivision or 3D features.
 
-## Quiet renderer information
+## Labels, density and metrics
 
-The active graphics renderer appears at the far right of the existing footer as 9 pt muted text. It has no badge background, new row, icon, floating overlay or unsolicited popup. Its allocated width never exceeds 240 logical pixels or 28% of the available footer width; long names are ellipsized using actual font measurements. Progress has a separate clipped region. Secondary performance telemetry yields first when the window becomes narrow.
+Folder allocation and native annotations share `layout::node_frame`. Names and counts are measured, clipped and shortened rather than overlapping. Small annotations may be omitted, but their underlying source remains in the pinned image. Statistics do not change with zoom.
 
-The complete renderer and vendor strings wrap in the inspector's Graphics renderer section, below repository metrics. The app first uses Makepad's cached active-backend information. When native Linux backends leave it unset, a bounded startup probe reads the already-current GLX/EGL context without creating or switching contexts. A successful result is cached; no installed-GPU enumeration, external commands or recurring driver polling is used. Unknown names stay not reported. Recognised software-renderer names remain visible without claiming hardware acceleration.
+Each source column uses its own maximum line width plus a three-character gap. Width is not justified across the whole file box. Viewport aspect includes canvas height. Window resizing or Area changes may trigger a new layout; ordinary navigation does not.
 
-## Map labels and density
+## Quiet status
 
-Graphite backgrounds, restrained borders, flat controls and a sage selection accent keep source readable. Palette tokens live in render; native widget styling lives in UI.
+The footer distinguishes complete-map preparation, background image refinement and idle navigation. Refinement never removes the overview. Secondary telemetry reports image rectangles and CPU submission time, not source glyph counts or FPS.
 
-`layout::node_frame` allocates the shared world-space header and child/source area. Directory/file annotations use that same header, rather than independently estimating screen height. Counts disappear before overlapping the name; long names are ellipsized within the visible header. Text and edges are clipped before crossing panel boundaries. Zoom does not alter the underlying file/line count.
+Renderer/device text stays at the far right in muted 9 pt text, capped at 240 logical pixels or 28% of footer width. It has no extra box, row or popup. Long names are fitted with actual font measurement; secondary telemetry yields first in narrow windows. Full device/vendor information lives below repository metrics in Details.
 
-Source columns take their own actual maximum line width and a three-character gap. Leftover horizontal width is not justified between columns. The column search considers both small counts and a wider set for large files, reducing avoidable vertical underfill. The viewport aspect includes available height, so overview fitting does not retain an obsolete fixed map aspect and leave a large blank strip at the bottom.
+The device probe uses the active backend/current context once and caches the result. No installed-device enumeration, external commands or per-frame driver polling. Software renderer names are shown without claiming hardware acceleration.
 
-## Camera and source
+## Evidence
 
-Actual source stays the only code representation. Zoom enlarges the same layout; it does not switch a preview into a reading mode. Double-click targets 12 px under the cursor; Read/F starts at the file beginning; Home returns to overview. Window resizing can recompute scene layout, unlike ordinary zoom.
-
-The uploaded video reference was inspected locally at overview, intermediate zoom and readable-source positions. Its useful design cues here are compact controls, thin hierarchy boundaries, tightly packed source and continuous navigation. Symbol subdivision shown in that reference is not implied to be implemented.
-
-Progressive preparation remains independent of zoom and is labeled in the footer. Bounded detail can stop at the current working-set limit; the footer must distinguish that from pending work rather than spinning forever. See [rendering](RENDERING.md).
+Real application captures cover complete overview, uncached zoom followed by sharper detail, restart reuse and compact windows. See RENDERING.md for the cache/privacy and preparation/navigation distinction.

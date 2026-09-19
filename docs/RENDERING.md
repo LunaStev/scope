@@ -1,39 +1,41 @@
-# Bounded continuous-source rendering
+# Persistent source-image rendering
 
-## Ownership
+## The visual contract
 
-A snapshot owns measured tree data, compact source widths and fixed world-space pages. Source text and lexical runs are prepared on background workers with a 128 MiB resident-document accounting budget. The renderer retains actual glyph geometry; it does not swap text for a line-bar or thumbnail representation at a zoom threshold.
+The complete accepted codebase contributes to the initial map, rather than stopping when a glyph cache fills. After that map is available, every navigation frame has the existing image as its backing. An unavailable higher-resolution image must not erase it. Source line/column positions remain fixed during pan and zoom.
 
-## First paint is separate from indexing
+The backing image is rasterized from actual characters, not line-length bars. Resolution changes only sampling density. Source is not switched from an abstract representation into text. The current CPU rasterizer uses the existing Liberation Mono font dependency and generic display spans; line classification remains the language service's separate authority. Font coverage/fallback and complex shaping are not claimed to match every script's native editor.
 
-Finishing the index must not trigger a full synchronous walk of every source tile. Presentation now uses a resumable DFS (at most 2,048 edge/node visits per pass), progressively retained node batches and separately scheduled labels (at most 256 candidates per pass). A directory with huge fan-out never pushes all its children onto a stack at once.
+## Preparation and ownership
 
-Each box is a single fill/border shader instance, rather than five quads. Background and measured-label draw lists are keyed by scene, camera, viewport, DPI and search query. Source-ready events reuse those lists. Selection and hover are lightweight border overlays and do not invalidate the static layers.
+The initial index retains exact counts, source revisions and compact per-line widths. When a matching scene is published, `runtime::maps` starts a cancellable worker that constructs a scene fingerprint and tries the private disk cache. On a miss `raster::Rasterizer` traverses every intersecting file, validates its revision, streams source lines, and accumulates filtered glyph coverage into the overview. There is no source-file/glyph count cutoff.
 
-The first layout is published only after its aspect and area metric match the latest requested viewport. An obsolete initial layout is not briefly displayed, populated with source and immediately discarded.
+The 2048-square overview is published only after this pass finishes. Progress is throttled. File-read failures are shown as warnings and are not persisted as a supposedly complete cached map. Initial preparation can therefore take longer than indexing; a warm cache avoids re-reading/rasterizing unchanged source for the overview.
 
-## Cold source admission
+One persistent worker owns its rasterizer. Camera requests replace obsolete queued regions; an already executing request may finish and become useful cache data. Results cross a channel of capacity two, and the UI also retains at most two decoded images awaiting upload. Closing or replacing a scene cancels its worker and isolates stale results.
 
-`layout::tiles::TileCursor` produces visible 32-line by 128-character tiles lazily. Ready, pending and worker-waiting file queues are distinct. Completed reads are promoted directly to the ready queue. Missing tails are not scanned to compute an exact remaining-block count. The footer reports queued regions instead.
+## Resolution hierarchy and GPU path
 
-A preparation pass admits at most 128 candidate checks, two new glyph tiles and 8,192 source character instances across the entire map, not per file. A roughly four-millisecond elapsed CPU guard applies before the first tile too. Time is a soft guard: native font layout/rasterization and a single admitted tile are not preemptible. This is not a GPU frame deadline.
+`raster::TileKey` addresses world-space subdivisions. A detail tile is 512 square pixels. Desired resolution is selected from the projected world density, with a screen-sized region, a surrounding halo and a small deeper central prefetch. Work enumeration is capped rather than walking the entire resolution level.
 
-Only resident tiles are replayed and pinned. Missing-tile discovery does not happen again just to render cached tiles. Geometry eviction is attempted only when the corresponding source document is ready. Full I/O capacity is reported as `Full`, not as a newly queued read. When reads are the only possible progress, their completion signal wakes the UI rather than a busy redraw loop.
+`render::ImageMap` always retains the root texture. It draws cached parents before children and clips UVs in f64 before passing coordinates to the GPU. New children fade in over 120 ms without removing their parents. A cold sudden jump can be temporarily soft; a cached move uses existing textures immediately. This is not a promise of precomputed infinite zoom or instantaneous detail at every possible location.
 
-Document memory accounting runs on preparation workers. Heavy evicted token allocations are released off the event thread. Camera changes retain glyph tiles while restarting the bounded visibility/cold-work cursors for the new region.
+The UI admits at most one image upload per paint. Root upload is 16 MiB; regional uploads are one MiB. A completed idle map does not redraw continuously. Live annotations remain bounded native text, and hovering/selection use small outlines. No per-source-character shaping or glyph buffer construction occurs in a navigation frame.
 
-## Continuous geometry
+## Persistence
 
-Columns use their own longest line plus three character cells of separation. Ordinary zoom changes only the camera, not line/column positions. Shared node-frame geometry controls both folder allocation and clipped names/counts. Screen clipping is done in f64 before GPU conversion and does not invent edges at viewport cuts.
+PNG images use scene fingerprint + tile coordinate filenames. The fingerprint includes file size/mtime, root, source paths, geometry, font and implementation format revision. It is not content-hash validation of every file. A scene geometry change invalidates that scene's images. Cache writes use a private directory and atomic temporary-file replacement; corrupt, oversized, incorrectly sized or invalid-format images are misses. Only the cache's own image filenames are pruned to its approximate 512 MiB budget.
 
-Resize may recompute the world aspect. The overview includes its 12-pixel margin. Source aspect and line lengths can still leave some space within an individual file; text is not distorted to force complete area occupancy.
+These images can reveal source content. They never leave the machine as part of normal application operation. `SCOPE_MAP_CACHE_OFF` disables persistence; `SCOPE_MAP_CACHE_DIR` selects a dedicated private directory.
 
-## Accounting and limits
+## Memory and limits
 
-The geometry cache retains at most one million glyphs and 4,096 tile entries. Node discovery retains the existing 50,000 visible-node safety limit. Detail-budget exhaustion stops futile automatic rebuilding and is shown in the footer; focusing a smaller region changes the eligible working set. Limits are accounting bounds, not total process RAM or GPU-memory caps.
+One root plus at most 96 detail images represents about 112 MiB of uncompressed image data. Native CPU copies and GPU copies may both exist. The raster worker's float coverage buffer, temporary text, font data, scene geometry, queued results, driver resources and cache encoding are additional allocations. Neither the image limit nor the disk limit describes total RAM/VRAM.
 
-Snapshots, in-flight source preparation, font atlases, native allocations, retired data and GPU copies require additional memory. Same-process index reuse is based on size/mtime, not a persistent content-hashed index.
+The previous native glyph tile implementation is retained internally but is not the active source rendering path. Its old one-million-glyph limit does not apply to overview image coverage.
 
-## Verification
+## Verification and telemetry
 
-Unit tests cover cursor suspension, huge line widths, admission limits, explicit I/O capacity and initial-aspect publication. GUI regressions preserve real source before zoom, zoom round trips, clipping, blank files and compact windows. The first-paint benchmark separately measures the post-index map submission path and input-handler latency during detail population. These are not FPS or GPU-completion measurements, and generated fixtures are not Chromium/Fuchsia checkouts.
+`source_lines` in source-image traces is the number of physical source lines processed into the root image, not the number of separately submitted visible glyphs. `image_tiles` counts composed image rectangles. `texture_uploads` counts newly supplied image textures in that paint. CPU submission excludes worker rasterization and GPU completion; `map_prepare_ms` includes fingerprint/cache lookup or raster preparation up to receipt.
+
+GUI tests cover a complete 1,200-line map before zoom, preserved backing through uncached enlargement, a readable-scale detail image, zero navigation-time source glyph construction, persistent restart reuse and edited-file invalidation. The four-million-line native benchmark records cold and warm preparation separately from navigation/input. Headless large-index tests measure a different stage. No result is described as monitor FPS or a real Chromium/Fuchsia hardware benchmark.

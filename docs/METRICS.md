@@ -1,31 +1,33 @@
-# Measurement contract
+# Measurement contracts
 
-All totals refer to accepted UTF-8 files under the active root and filters. Binary/non-UTF-8, oversized and unreadable files are reported separately. Indexed bytes are file-content bytes, not disk allocation or Git history.
+## Population and accounting
 
-```text
-physical lines = code + comment-only + blank + unclassified
-```
+Every statistic is computed from the accepted UTF-8 files at the indexed root, after ignore/exclusion and size-limit rules. Text bytes are source bytes, not disk allocation or Git history. Indexed files are not inferred from rendered tile counts.
 
-Physical lines use `str::lines()`; a trailing newline creates no phantom row. The language service dispatches to the independent Wave classifier or pinned Tokei 12.1.2. Mixed code/comment lines count as code. Unknown or inconsistent classification preserves non-blank text as unclassified. Known language identity does not itself imply a supported classifier. Display colors are not the authority for counts.
+`physical lines = code + comment-only + blank + unclassified`
 
-The summary and language shares are workspace-wide; selected-node inspector counts include descendants. Percentages use all indexed physical lines, with an em dash for an empty denominator. Numbers use grouping and measured glyph alignment. Byte units adapt between B, KiB, MiB and larger units.
+Recognized language classification uses the language service, with a dedicated Wave classifier and pinned Tokei catalogue backend. Unknown non-blank text remains unclassified. Mixed code/comment lines count as code. Empty files have no phantom line, and a trailing newline does not create an additional physical line. Rendering display spans do not override metric classification.
 
-Area modes use non-blank, physical, code or byte weights. Empty/zero-weight files receive a visibility floor of one; that floor never alters measured statistics. Folder labels consume immutable model counts: camera changes do not re-count files or lines.
+The summary is workspace-wide. The main inspector section describes the selection and its descendants. Language percentages use workspace physical lines as their denominator. Empty denominators show an em dash. Counts use exact integers with grouping separators, and bytes use B/KiB/MiB/GiB.
 
-## Index telemetry
+## Geometry
 
-`elapsed_ms` measures indexing without layout or rendering. `workers` is the configured indexing concurrency. `reused_files` counts same-process records accepted by size/mtime metadata, not a content-hash comparison. `pruned_entries` counts explicit exclusions encountered by traversal, not every ignored descendant. Warning count is complete; at most 50 warning strings are retained.
+Area uses non-blank lines, physical lines, classified code lines or text bytes. Empty or zero-weight files receive a minimum visual weight for selection, but reported counts do not include that weight. Zoom and image resolution never change file/line totals. Code columns are fixed world-space layouts; camera movement only transforms them.
 
-`Tree::source_memory_bytes` and JSON `line_index_bytes` now account for compact width arrays and block maxima. They do not include all tree records, source documents, glyph geometry or GPU memory. The inspector labels this number **Line index**. **Resident source** is the separate document cache's source/run-capacity accounting. Neither counter is total process memory.
+## Preparation and drawing
 
-## Render telemetry
+Scan time measures indexing. Map preparation time is separate and includes scene fingerprinting plus cached image decoding or actual-source rasterization through receipt of the prepared root. Warm map reuse does not skip inventory validation of file metadata and layout.
 
-CPU map time measures command submission, not GPU completion or FPS. Retained tiles cover at most 32 lines by 128 character columns. Trace line/run counts describe submitted cached geometry, not the authoritative repository total. Pending work, background reads, errors and budget-limited detail are distinct states.
+The image-map trace's `source_lines` is the number of physical lines processed into the complete root map (or the matching snapshot's count on a valid cache hit). It is not the number of readable screen lines, sampled glyphs, or separately submitted visible text instances. A failed source read is recorded in map errors, not silently counted as rendered source.
 
-Actual source is prepared on demand at any scale; navigation may cause a read after eviction. Revision mismatches are reported rather than silently mixing new text with old statistics. Deliberately preserving both file size and timestamps can defeat metadata checks; no content-hash guarantee is claimed.
+`image_tiles` counts image rectangles composed in the current paint, including the backing overview and available child resolutions. `texture_uploads` is the number of new image textures admitted in that paint, at most one. `cpu_submit_ms` measures CPU drawing/submission, excluding background map preparation and actual GPU completion. None of these fields is FPS.
 
-## Stress reports
+## Memory
 
-The CI fixtures separately stress 50 million lines across 20,000 files and 100,000 files with 10 million lines. They contain generated Wave/Rust/C++/Python/TypeScript code, not real Chromium or Fuchsia sources. Reports separate initial index, source-page layout and same-process warm reuse. OS page caches are not cleared. Linux VmHWM records headless process peak RSS while both the first and reused tree are alive; it excludes a GUI, resident source preparation and GPU allocations.
+Line-index memory refers to compact source widths. The image compositor keeps a pinned 16 MiB root and at most 96 one-MiB regional textures, by uncompressed image size. This is not total process RAM or GPU allocation: CPU copies, native driver resources, fonts, source-read buffers, floating-point raster coverage and in-flight results are additional. The persistent PNG cache has its own approximate 512 MiB pruning budget.
 
-Historical `performance.py` compares the old and retained renderer on a 12,000-line warm GUI fixture. Its CPU submission results must not be presented as large-repository loading or full-app FPS measurements.
+## Benchmarks
+
+The generated four-million-line fixture runs in a real native window. Reports separate launch-to-first-map, cold/warm cache preparation, per-paint CPU submission and native input-handler latency. The old renderer's first view is partial; the new one waits for its complete overview. They do not have equivalent readiness times, and preparation time must not be hidden in an FPS claim.
+
+Generated 50-million-line and 100,000-file headless fixtures still test indexing separately. Neither these fixtures nor software-OpenGL CI stand in for a real Fuchsia/Chromium checkout on Fedora hardware.

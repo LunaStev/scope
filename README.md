@@ -1,6 +1,6 @@
 # Scope
 
-A local, language-independent spatial codebase explorer built with Rust and Makepad. Scope is independent of Makepad Scope and is not specific to Wave.
+A local, language-independent spatial codebase explorer built with Rust and Makepad. Independent of Makepad Scope and not specific to Wave.
 
 ## Run
 
@@ -10,71 +10,69 @@ cd scope
 cargo run --release -- /path/to/repository
 ```
 
-Update an existing checkout with `git pull --ff-only origin master`. The executable is `target/release/scope`. Use a release build for interactive exploration.
+Update with `git pull --ff-only origin master`. The executable is `target/release/scope`. Use a release build for interactive exploration.
 
-Headless reports: `--scan` or `--json`. `cargo run --no-default-features -- --json .` needs no display. `--threads N` controls indexing workers (1–32, automatically capped at eight).
+Headless inventory is unchanged: `--scan` or `--json`. `cargo run --no-default-features -- --json .` needs no display or map preparation. `--threads N` controls indexing workers, not map rasterization.
+
+## Prepare once, navigate the map
+
+Scope now finishes a **complete actual-source overview** before revealing the map. It reads the accepted source files and draws their actual characters into a 2048 × 2048 image. Tiny characters contribute filtered glyph coverage rather than disappearing at an arbitrary glyph-count limit. No sampled bars or invented code blocks stand in for source.
+
+That overview stays resident. Navigation scales and translates prepared images on the GPU. It does not rebuild millions of text glyphs on the UI thread. When more resolution is needed, a background worker produces 512 × 512 regional images. The existing parent image stays visible while detail arrives; detail fades in at the same coordinates. An abrupt uncached jump can briefly be soft, but is not replaced with an empty region.
+
+The view and nearby regions are requested ahead of time. Cached resolutions are reused on return visits. Map images persist between application launches. First preparation can take longer than indexing; restarting an unchanged codebase reuses its cached overview instead of rasterizing every character again.
+
+This is **CPU background preparation plus GPU image composition**, not a claim that source parsing or map-image construction runs on the GPU. The code layout, three-character column gaps, selection, search, measurement definitions and quiet renderer footer remain.
+
+## Controls
+
+- Wheel: cursor-anchored zoom; drag: pan.
+- Double-click a file: target a readable 12 px scale under the pointer.
+- `F` / Read: focus a file from its beginning; fit directories.
+- `Home` / Overview: fit the whole repository. Backspace / Up: parent.
+- Source: manually show/hide source images. Details: show/hide the inspector.
+- Area: non-blank lines, physical lines, code lines or text bytes.
+
+The same source is used at all resolutions. Ordinary zoom does not reflow its lines or columns. Resizing the window or changing Area can produce a different layout and therefore a new map. Search highlights matching visible paths; it does not rerasterize the whole map.
 
 ## Root modules
 
 ```text
-scope/
-  app/          Process entry, CLI and reports
-  model/        Tree, source shape, documents and measurement contracts
-  language/     Catalogue, detection, classifiers and highlighting
-  analysis/     Bounded parallel scanning and index reuse
-  layout/       Treemap, packed code, camera and resumable tile cursors
-  runtime/      Background jobs, versioned snapshots and resident documents
-  render/       Retained layers, glyph tiles and first-paint scheduling
-  ui/           Toolbar, summary, inspector and input
-  docs/
-  scripts/
-  Cargo.toml
+app/        Process entry, CLI and reports
+model/      Tree, line shapes, source and metric contracts
+language/   Language catalogue, detection, metrics and display lexing
+analysis/   Read-only parallel indexing and unchanged-record reuse
+layout/     Treemap, packed code pages and camera
+raster/     Actual-glyph rasterization, resolution tiles and persistent image cache
+runtime/    Background jobs, scene revisions and map preparation queues
+render/     GPU texture composition and native annotations
+ui/         Compact controls, summary, inspector and input
 ```
 
-There is no `crates/` container or `scope-*` module prefix. All modules are independent workspace packages; only the executable package is named `scope`. Headless modules do not depend on Makepad.
+All are root-level workspace packages; no `crates/` container or `scope-*` module prefixes. Only the executable package is named `scope`. Model, language, analysis, layout, raster and runtime have no Makepad dependency.
 
-## Compact, continuous source
+## Cache and memory
 
-A small toolbar and one-line summary leave the window for the code map. **Details** toggles the independently scrollable inspector. Measured names/counts share the allocator's header geometry and are clipped rather than overlapping. Numeric data does not change with zoom.
+Map images contain visual copies of code. They stay local. On Linux the default cache is `$XDG_CACHE_HOME/scope/maps-v1`, or `~/.cache/scope/maps-v1`. The directory is private (0700 on Unix), image writes are atomic, invalid images become cache misses, and old cache images are pruned to an approximate 512 MiB disk budget. No remote upload or interpreter execution is involved.
 
-Source columns use their own longest line plus three character cells of separation. Ordinary pan/zoom scales the same actual text at the same positions, without bars, thumbnails or a representation-switch threshold. Resize and area changes may recompute the scene; ordinary zoom does not reflow it.
+- `SCOPE_MAP_CACHE_OFF=1`: disable persistent image caching.
+- `SCOPE_MAP_CACHE_DIR=/path/to/private/cache`: select a dedicated cache directory.
 
-- Wheel zooms at the cursor; drag pans.
-- Double-click a file enlarges the same source under the pointer to a 12 px reading target.
-- `F` / **Read** focuses a file from its beginning or fits a directory.
-- `Home` / **Overview** fits the repository; `Backspace` / **Up** focuses the parent.
-- **Area** cycles non-blank lines, physical lines, code lines and text bytes.
-- **Source** manually toggles the source layer.
+The cache key covers the root, file paths, size/modification-time revisions, world geometry, font bytes and map-format revision. This is not a content-hash check of every source file. Re-index after edits. A layout change currently invalidates the scene's map cache as a whole, not just the changed file.
 
-## First-paint performance
+GPU composition retains the pinned 16 MiB overview and at most 96 one-MiB detail images. Those image-byte counts are not total process or GPU-memory caps: CPU copies, driver allocations, raster working buffers, fonts and in-flight work are additional. Decoded result queues and per-paint texture uploads are bounded.
 
-Index completion no longer starts an unbounded scan of all missing glyph tiles. The renderer discovers nodes and labels incrementally, retains their draw lists, and uses lazy source cursors that resume where the previous pass stopped. A missing source read is requested once per admitted file, not once per tile. Ready worker results go directly to a ready queue.
+## Language and metrics
 
-Node backgrounds use one fill/border instance rather than five quads. While source arrives, existing backgrounds and names are reused. Selection and hover are separate outlines. Warm source rendering visits only resident tiles, instead of also walking every missing tile of every visible file.
-
-Per-pass admission limits are 2,048 node/edge visits, 256 label candidates, 128 source-tile checks, **two new source tiles across the whole map**, and 8,192 new source character instances. Cold source work has a roughly four-millisecond elapsed CPU guard, including the first tile. This is a soft time guard, not a hard GPU frame deadline: an individual native font operation can exceed it.
-
-The first layout is published only after matching the latest viewport/metric. An obsolete initial layout is not displayed and immediately discarded. Source-allocation accounting and heavyweight document retirement run off the UI event thread. When waiting for reads, completion signals wake the UI instead of continuous polling redraws.
-
-## Large repositories and residency
-
-Initial indexing retains statistics, revision metadata and compact per-line widths, not every source/token string. Parallel workers feed a bounded result queue; progress is throttled to roughly 150 ms. Same-process re-indexing reuses records whose size and modification time are unchanged. There is no persistent or content-hashed index.
-
-Visible actual source is prepared on background workers at any zoom level. The document cache has a 128 MiB accounting budget, 256 entries and at most two active workers. Glyph geometry uses 32-line by 128-character tiles and retains up to one million glyphs / 4,096 tile entries. The existing 50,000 visible-node safety limit is retained. Exhausted detail budgets are reported instead of causing endless eviction/rebuild loops; focusing a smaller region changes the eligible working set.
-
-These limits do not cap total process RAM or GPU memory. Font atlases, in-flight/retired data, native allocations and GPU copies are additional. See [rendering details](docs/RENDERING.md).
-
-## Languages and measurements
-
-`language/` owns JSON definitions, validated registration, filename/compound-extension/shebang detection, a pinned Tokei catalogue adapter, classifiers and display lexers. Wave is recognized explicitly and has its own comment/string-aware classifier. The scanner and UI do not contain language-name special cases. See [language contracts](docs/LANGUAGE.md).
+`language/` owns filename/compound-extension/shebang detection and lexical classification. Wave is explicitly recognised. All indexed text obeys:
 
 ```text
 physical lines = code + comment-only + blank + unclassified
 ```
 
-The summary is repository-wide; the inspector's main section is selected-node data. Language shares use workspace physical lines. Unknown text remains unclassified. Byte units adapt between B/KiB/MiB/GiB; counts are not inflated to match minimum visual tile weights.
+Summary counts are repository-wide; inspector counts are for the selection. Unknown text remains unclassified. Byte units are B/KiB/MiB/GiB. Image resolution and visible detail never change measured file or line counts.
 
-All access is local and read-only. `.git`, `.hg`, `.svn` and symlinks are excluded. Ignore files are respected by default. Options include `--include-build`, `--no-ignore`, repeatable `--exclude NAME`, and `--max-file-mib N` (default eight). Only accepted UTF-8 text is indexed. Re-index after edits; revision-mismatched source is not silently mixed with earlier measurements.
+`.git`, `.hg`, `.svn` and symlinks are excluded. Ignore files are respected. Options include `--include-build`, `--no-ignore`, repeatable `--exclude NAME`, and `--max-file-mib N` (default eight). Only accepted UTF-8 text contributes to the index and map. Source changes detected during map preparation are reported instead of silently mixing old measurements with new text.
 
 ## Validation
 
@@ -85,8 +83,8 @@ cargo build --release -p scope
 python3 scripts/check_architecture.py
 ```
 
-CI checks module boundaries, metric accounting, language detection, parallel/serial agreement, residency, suspended tile cursors, initial-aspect publication, source before zoom, zoom round trips and compact windows. Generated large-index fixtures remain 20,000 files / 50 million lines and 100,000 files / 10 million lines.
+GUI tests verify the full source fixture before any zoom, a persistent backing image during uncached zoom, detailed image arrival, cached restart, edit invalidation and compact windows. A matched native-window benchmark separates initial complete-map preparation, cold/warm CPU submission and input-handler latency on a generated 4,000-file / four-million-line fixture. These measurements are not GPU time or FPS and do not substitute for a real Chromium/Fuchsia checkout on user hardware.
 
-A separate matched release benchmark opens **4,000 files / four million lines in a real window** and sends scroll input during post-index detail population. It preserves first-map/early-frame CPU submission measurements and native input-handler latencies, with per-pass admission assertions. These results are not GPU completion time or FPS. GUI CI uses Ubuntu and software OpenGL, not Fedora hardware; the generated fixtures are not actual Chromium or Fuchsia checkouts.
+Headless 50-million-line and 100,000-file fixtures continue to validate indexing separately. Linux GUI CI uses Ubuntu software OpenGL.
 
-See [architecture](docs/ARCHITECTURE.md), [design](docs/DESIGN.md), [metrics](docs/METRICS.md) and [contributing](CONTRIBUTING.md). AST subdivision, a 3D camera, persistent indexing and filesystem watching are not implemented yet.
+See [rendering](docs/RENDERING.md), [architecture](docs/ARCHITECTURE.md), [design](docs/DESIGN.md), [metrics](docs/METRICS.md) and [language](docs/LANGUAGE.md). AST subdivision, 3D navigation and filesystem watching are not implemented.
