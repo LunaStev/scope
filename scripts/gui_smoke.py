@@ -1,4 +1,4 @@
-"""Exercise real source, retained geometry and compact UI under Xvfb."""
+"""Exercise actual source, retained geometry, zoom round trips and compact UI."""
 from pathlib import Path
 import os
 import re
@@ -16,8 +16,8 @@ def wait_ready(proc,log,minimum=1,timeout=60):
     end=time.monotonic()+timeout
     while time.monotonic()<end:
         if proc.poll() is not None:raise AssertionError(log.read_text(errors='replace'))
-        r=frames(log)
-        if r and int(r[-1].get('lines',0))>=minimum and r[-1].get('pending')=='0':return r[-1]
+        records=frames(log)
+        if records and int(records[-1].get('lines',0))>=minimum and records[-1].get('pending')=='0' and records[-1].get('waiting','0')=='0':return records[-1]
         time.sleep(.1)
     raise AssertionError('Geometry did not complete: '+log.read_text(errors='replace')[-4000:])
 def launch(root,name,minimum):
@@ -27,8 +27,6 @@ def launch(root,name,minimum):
         record=wait_ready(proc,log,minimum)
         wid=xdo('search','--pid',proc.pid,'--name','Scope').splitlines()[0]
         xdo('windowmove',wid,0,0)
-        # The trace precedes presentation. Allow a completed warm redraw before
-        # capturing, rather than saving a still-pending previous frame.
         xdo('mousemove',580,450);time.sleep(.5)
         record=wait_ready(proc,log,minimum);time.sleep(.15)
         return proc,file,log,wid,record
@@ -43,7 +41,7 @@ def stop(proc,file):
 
 with tempfile.TemporaryDirectory(prefix='scope-gui-') as folder:
     root=Path(folder)
-    (root/'main.rs').write_text(''.join(f'fn f_{i}() {{ let x = {i}; }} // line {i}\n' for i in range(1200)))
+    (root/'main.wave').write_text(''.join(f'fun f_{i}() {{ let x = {i}; }} // line {i}\n' for i in range(1200)))
     proc,file,log,wid,before=launch(root,'source',1200)
     try:
         assert int(before['lines'])==1200 and 0<float(before['font_min'])<7
@@ -54,7 +52,14 @@ with tempfile.TemporaryDirectory(prefix='scope-gui-') as folder:
         assert any(r['reused']!='0' and r['built']=='0' for r in frames(log)), 'Camera must reuse geometry'
         sp.run(['import','-window',wid,str(OUT/'scope-source-read.png')],check=True)
         xdo('key','Home');time.sleep(.5)
+        restored=wait_ready(proc,log,1200)
+        assert int(restored['lines'])==1200,restored
+        xdo('mousemove',580,480,'click',4);time.sleep(.3)
+        xdo('click',5);time.sleep(.3)
+        restored=wait_ready(proc,log,1200)
+        assert int(restored['lines'])==1200,restored
         xdo('windowsize',wid,960,640);time.sleep(1)
+        wait_ready(proc,log,1200)
         sp.run(['import','-window',wid,str(OUT/'scope-compact.png')],check=True)
     finally:stop(proc,file)
     (root/'blank.rs').write_text('\n'*300)

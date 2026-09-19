@@ -1,5 +1,5 @@
 [workspace]
-members = ["app", "model", "analysis", "layout", "runtime", "render", "ui"]
+members = ["app", "model", "language", "analysis", "layout", "runtime", "render", "ui"]
 default-members = ["app"]
 resolver = "2"
 
@@ -11,6 +11,7 @@ repository = "https://github.com/LunaStev/scope"
 
 [workspace.dependencies]
 model = { path = "model" }
+language = { path = "language" }
 analysis = { path = "analysis" }
 layout = { path = "layout" }
 runtime = { path = "runtime" }

@@ -1,0 +1,15 @@
+[
+  {"id":"wave","name":"Wave","classifier":"wave","extensions":["wave"],"interpreters":["wave","wavec"]},
+  {"id":"toml","name":"TOML","classifier":"TOML","filenames":["Cargo.lock","uv.lock","poetry.lock","Pipfile"]},
+  {"id":"json","name":"JSON","classifier":"JSON","filenames":["Pipfile.lock","composer.lock","package-lock.json"]},
+  {"id":"make","name":"Makefile","classifier":"Makefile","filenames":["Makefile","makefile","GNUmakefile"]},
+  {"id":"docker","name":"Dockerfile","classifier":"Dockerfile","filenames":["Dockerfile","Containerfile"]},
+  {"id":"cmake","name":"CMake","classifier":"CMake","filenames":["CMakeLists.txt"]},
+  {"id":"meson","name":"Meson","classifier":"Meson","filenames":["meson.build","meson_options.txt"]},
+  {"id":"python","name":"Python","classifier":"Python","interpreters":["python","python2","python3","pypy","pypy3"]},
+  {"id":"shell","name":"Shell","classifier":"Sh","interpreters":["sh","bash","dash","zsh","ksh"]},
+  {"id":"javascript","name":"JavaScript","classifier":"JavaScript","extensions":["mjs","cjs"],"interpreters":["node","nodejs","bun"]},
+  {"id":"typescript","name":"TypeScript","classifier":"TypeScript","extensions":["mts","cts","d.ts"],"interpreters":["deno","tsx"]},
+  {"id":"ruby","name":"Ruby","classifier":"Ruby","filenames":["Gemfile","Rakefile"],"interpreters":["ruby"]},
+  {"id":"perl","name":"Perl","classifier":"Perl","interpreters":["perl"]}
+]

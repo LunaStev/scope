@@ -5,9 +5,8 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 allowed = {
-    "model": set(),
-    "analysis": {"model"},
-    "layout": {"model"},
+    "model": set(), "language": {"model"},
+    "analysis": {"model", "language"}, "layout": {"model"},
     "runtime": {"model", "analysis", "layout"},
     "render": {"model", "layout", "runtime"},
     "ui": {"model", "analysis", "layout", "runtime", "render"},
@@ -23,6 +22,6 @@ for name, package in packages.items():
         target = dependency["name"]
         if target in allowed:
             assert target in allowed[name], f"Forbidden dependency: {name} -> {target}"
-        if name in {"model", "analysis", "layout", "runtime"}:
+        if name in {"model", "language", "analysis", "layout", "runtime"}:
             assert not target.startswith("makepad"), f"GUI dependency leaked into {name}"
 print("Root module names, manifest paths and dependency boundaries verified.")

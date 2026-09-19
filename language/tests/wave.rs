@@ -1,0 +1,6 @@
+use language::{measure,Registry,highlight};
+use model::Ink;
+use std::path::Path;
+#[test]fn nested_comments_strings_and_mixed_lines(){let text="// header\n\n/* outside\n/* nested */\nend */\nfun main() {\n let url = \"https://x/*not comment*/\"; // tail\n}\n";let m=measure(Path::new("main.wave"),text);assert!(m.classified);assert_eq!(m.language,"Wave");assert_eq!((m.stats.lines,m.stats.code,m.stats.comments,m.stats.blanks,m.stats.unclassified),(8,3,4,1,0));assert!(m.stats.is_consistent());}
+#[test]fn display_preserves_comment_state_between_lines(){let text="/* outer\n /* nested */\n tail */ let a: i32 = 1;\n";let d=Registry::builtin().detect(Path::new("x.wave"),text);let doc=highlight::prepare_for(text.into(),&d);assert!(doc.runs[1].iter().all(|r|r.ink==Ink::Comment));assert!(doc.runs[2].iter().any(|r|r.ink==Ink::Keyword));assert_eq!(doc.runs[2].iter().map(|r|r.text.as_str()).collect::<String>()," tail */ let a: i32 = 1;");}
+#[test]fn crlf_empty_unterminated_and_unicode_accounting(){for text in ["","\r\n","/* open\n nested\n","let 설명 = \"/*你好*/\";\r\n","let c = '\\''; // character\n"]{let m=measure(Path::new("x.wave"),text);assert_eq!(m.stats.lines,text.lines().count() as u64);assert!(m.stats.is_consistent());}}

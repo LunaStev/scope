@@ -1,5 +1,7 @@
-//! Background indexing and immutable scene snapshots. No GUI dependency.
+//! Background index/source services without a GUI dependency.
 pub mod session;
-pub use session::{Session, Snapshot};
-pub type Wake = fn();
-pub(crate) fn noop() {}
+pub mod residency;
+pub mod documents;
+pub use session::{Session,Snapshot};
+pub type Wake=fn();
+pub(crate) fn noop(){}
