@@ -8,9 +8,15 @@ The source map is the primary surface. Avoid large dashboard cards, duplicate br
 - 38 px navigation row: Overview, Up, Read, path search, Area and Source.
 - 30 px one-line workspace summary.
 - Map filling the remaining body; optional independently scrolling 248–280 px inspector.
-- 24 px footer for pending work, detail limits, cached reuse and CPU submission time.
+- 24 px footer for pending work, detail limits, cached reuse, CPU submission time and the active renderer name.
 
 At widths below 720 px the inspector yields to the map. Numeric values use actual measured text width rather than character-count estimates. Tests capture full-size and 960 x 640 windows.
+
+## Quiet renderer information
+
+The active graphics renderer appears at the far right of the existing footer as 9 pt muted text. It has no badge background, new row, icon, floating overlay or unsolicited popup. Its allocated width never exceeds 240 logical pixels or 28% of the available footer width; long names are ellipsized using actual font measurements. Progress has a separate clipped region. Secondary performance telemetry yields first when the window becomes narrow.
+
+The complete renderer and vendor strings wrap in the inspector's Graphics renderer section, below repository metrics. The app reads Makepad's cached active-backend information, not a list of installed GPUs. Unknown names are shown as not reported; recognised software-renderer names remain visible without claiming hardware acceleration. Unchanged names and their width-fitted footer text are reused rather than polled through driver calls or external commands.
 
 ## Map labels and density
 
