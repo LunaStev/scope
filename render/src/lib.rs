@@ -4,5 +4,6 @@ pub mod painter;
 pub mod retained;
 pub mod tiles;
 mod map;
+mod performance;
 pub use painter::{MapPainter,RenderStats};
 pub fn live_design(cx:&mut makepad_widgets::Cx){painter::live_design(cx);}

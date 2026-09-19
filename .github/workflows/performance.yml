@@ -1,0 +1,34 @@
+name: Renderer A-B benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [perf/retained-clean-ui]
+    paths: ['render/**', 'scripts/benchmark_render.py', 'scripts/build_benchmark.sh', '.github/workflows/performance.yml']
+permissions:
+  contents: read
+concurrency:
+  group: renderer-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb xdotool
+      - name: Compare release renderers
+        run: bash scripts/build_benchmark.sh
+      - name: Preserve measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scope-render-performance
+          path: |
+            performance.json
+            perf-before.log
+            perf-after.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -20,6 +20,7 @@ impl Workspace {
         }
         self.state.session.apply_focus(view);
         clip(cx,view);self.state.frame=self.map.paint_map(cx,&self.state.session,view);cx.end_turtle();
+        self.state.frame.trace_perf();
         let panel=Box2::new(view.x+view.w,view.y,side,view.h);
         if self.state.panel!=panel{self.state.panel_dirty=true;self.state.panel=panel;}
         if side>0.0 {
@@ -40,8 +41,6 @@ impl Workspace {
         if foot.w>1000.0{self.chrome.text(cx,foot.x+foot.w*0.42,foot.y+7.0,10.0,p::muted(),"Scroll to zoom   ·   Double-click to read   ·   Home to fit");}
         let mut fit=Camera::default();fit.fit(WORLD,view);
         self.chrome.text_right(cx,foot.x+foot.w-16.0,foot.y+7.0,10.0,p::secondary(),&format!("{:.0}%   ·   Read-only",self.state.session.camera.scale/fit.scale*100.0));
-        // Continue only while cold geometry is being prepared. No permanent
-        // animation loop when idle, including after source visibility is off.
         if frame.pending_tiles>0{cx.new_next_frame();}
         self.draw_bg.end(cx);DrawStep::done()
     }

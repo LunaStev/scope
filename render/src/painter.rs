@@ -1,16 +1,15 @@
 use makepad_widgets::*;
 use ::layout::Box2;
+use crate::retained::RetainedSources;
 
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     pub MapPainter = {{MapPainter}} {
-        quad: {color: #17191e}
+        quad: {color: #1a1c22}
         label: {text_style: <THEME_FONT_REGULAR> {font_size: 11}, color: #d9dce3}
         code: {
             text_style: <THEME_FONT_CODE> {font_size: 16}, color: #b8c3d2
-            // Glyph instances contain immutable world coordinates. Only these
-            // two uniforms change while navigating; the instance VBO is reused.
             uniform scope_camera: vec4 = vec4(0.0, 0.0, 1.0, 1.0);
             uniform scope_clip: vec4 = vec4(0.0, 0.0, 1000000.0, 1000000.0);
             fn vertex(self) -> vec4 {
@@ -35,7 +34,7 @@ pub struct MapPainter {
     #[live] pub quad: DrawColor,
     #[live] pub label: DrawText,
     #[live] pub code: DrawText,
-    #[rust] pub retained: crate::retained::RetainedSources,
+    #[rust] pub retained: RetainedSources,
 }
 impl LiveRegister for MapPainter { fn live_register(_cx: &mut Cx) {} }
 #[derive(Clone, Copy, Debug, Default)]
@@ -47,9 +46,8 @@ pub struct RenderStats {
     pub built_tiles: usize,
     pub reused_tiles: usize,
     pub retained_bytes: usize,
-    /// CPU source runs shaped/submitted this frame; zero on a warm camera move.
     pub submitted_runs: usize,
-    /// CPU submission wall time; not GPU completion time, process RAM or FPS.
+    /// CPU submission wall time, not GPU completion time or FPS.
     pub cpu_submit_ms: f64,
 }
 impl MapPainter {
