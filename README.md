@@ -1,87 +1,95 @@
 # Scope
 
-A local, language-independent spatial codebase explorer. Point it at a directory, see its folders and text files as a nested map, then zoom into actual source code.
+A local, language-independent codebase explorer. Navigate an entire repository as a spatial map, then zoom into real source text.
 
-Scope is an independent application inspired by spatial source-code visualizers. It is not Makepad Scope or a feature of Makepad Director. The native interface uses the published `makepad-widgets` 1.0.0 release; a separate Makepad checkout is not required.
+Scope is an independent project, not Makepad Scope or a Wave-specific tool. Its native interface uses Rust and Makepad. Repository reads are local and read-only.
 
 ## Run
 
 ```sh
+git clone https://github.com/LunaStev/scope.git
+cd scope
 cargo run --release -- /path/to/repository
 ```
 
-The executable is `target/release/scope`. With no path, it reads the current directory. A Git repository is not required. Quote paths containing spaces.
+The executable is `target/release/scope`. The repository root is a Cargo workspace; its default member is the desktop/CLI application in `apps/scope`.
+
+### Linux prerequisites
+
+A current stable Rust toolchain and the X11/OpenGL/audio development libraries used by Makepad are required. On Fedora:
 
 ```sh
-cargo run --release -- .
-cargo run --release -- --scan /path/to/repository
-cargo run --release -- --include-build --exclude vendor /path/to/repository
+sudo dnf install gcc gcc-c++ pkgconf-pkg-config libX11-devel libXcursor-devel libXrandr-devel libXi-devel libXinerama-devel alsa-lib-devel pulseaudio-libs-devel mesa-libGL-devel mesa-libEGL-devel
 ```
 
-Linux requires the development libraries used by Makepad (X11/OpenGL and audio libraries). An existing working Makepad build normally means these dependencies are already present. Rust stable is used for CI.
+CI builds and exercises the GUI on Ubuntu with software OpenGL. Other environments are not implied to be tested by that result.
 
-## First implementation
+## Workspace
 
-- Background directory scanning, stable hierarchical squarified layout and cursor-anchored wheel zoom.
-- Drag to pan, click to select, double-click to focus; Home, Parent and Fit selection controls.
-- Folder/file labels, filename/path search highlighting and an Inspector with actual file counts and line counts.
-- Miniature traces sampled from real file contents; sufficiently close views load and draw actual source text in the map.
-- Language labels based on filenames, with arbitrary UTF-8 text as a fallback. No compiler integration or language-specific AST is required.
-- Read-only operation. No code execution, cleanup, file rewriting, server or source upload.
-
-**Area is non-blank physical lines, including comments**, with a minimum visible weight for empty text files. It is not language-aware SLOC, complexity, function count or disk usage.
-
-## Exclusions and limits
-
-`.git`, `.hg` and `.svn` are always excluded, including `.git` pointer files in worktrees. Symlinks are not followed. Binary/non-UTF-8 files are skipped and counted.
-
-By default Scope respects `.gitignore`, `.ignore` and `.scopeignore`, even for copied source trees without a `.git` directory. Parent/global ignore files are not consulted. It also excludes directories named `target`, `node_modules`, `build`, `dist`, `.venv`, `venv`, `__pycache__` and `.cache`.
-
-`--include-build` disables the built-in build/dependency exclusions. `--no-ignore` disables ignore-file rules. `--exclude NAME` adds a basename exclusion and can be repeated. Use `.scopeignore` for path/glob rules.
-
-The scanner reads at most 8 MiB per file by default (`--max-file-mib N` changes this). Source display is loaded on demand, with up to three reads in flight, eight cached documents and a 32 MiB document-cache budget. The source viewer has a separate 16 MiB per-file maximum. Oversized files and read errors are reported rather than silently included in totals.
-
-## Controls
-
-| Action | Control |
+| Package | Responsibility |
 | --- | --- |
-| Open another source tree | Path field, then Open |
-| Rescan current tree | Refresh |
-| Zoom around pointer | Mouse wheel |
-| Pan | Drag inside the map |
-| Select | Single click |
-| Focus a file or folder | Double click / Fit selection / F |
-| Fit whole tree | Home button / Home key |
-| Focus parent | Parent button / Backspace |
-| Highlight paths | Search field |
-| Toggle code traces/text | Source button |
+| `scope-core` | Tree model, metric contracts, report types, number formatting |
+| `scope-analysis` | Filesystem traversal, ignore policy, bounded reads, language classification, source documents |
+| `scope-layout` | Squarified treemaps, metric weights, camera and hit-testing |
+| `scope-runtime` | Background jobs, snapshot replacement, selection/search state and bounded source cache |
+| `scope-render` | GPU map drawing, source LOD, text rendering and shared color tokens |
+| `scope-ui` | Application shell, dashboard, inspector, controls and input routing |
+| `scope` | Thin CLI entry point and JSON/text reporting |
 
-Keyboard shortcuts are active after clicking the map. Source text is read from the current file; use Refresh after editing to recompute layout and statistics.
+Core analysis, layout and runtime have no dependency on Makepad. The CLI and GUI consume the same measurements. `scripts/check_architecture.py` enforces internal dependency direction.
 
-## Project structure
+## Interface
 
-```text
-src/
-  main.rs      CLI and native entry point
-  app.rs       Window, toolbar and search
-  view.rs      GPU drawing, interaction, async scan/load and source cache
-  scanner.rs   Ignore-aware, read-only file inventory
-  source.rs    Bounded UTF-8 reads, line index and lexical display hints
-  model.rs     Language-independent tree and statistics
-  layout.rs    Squarified layout and hierarchical hit testing
-  camera.rs    Coordinate transforms and pointer-anchored zoom
-```
+- Four overview cards: text files, physical lines, code lines and adaptive text-size units.
+- Spatial map with language colors, path highlighting, source previews and actual text at readable zoom levels.
+- Scrollable inspector with exact counts, line composition, workspace language distribution and index health.
+- Area control cycles through non-blank lines, physical lines, classified code lines and text bytes.
+- Overview, parent, selection focus, source visibility and inspector visibility controls.
+- Footer reports visible nodes, CPU draw-submission time and source-cache memory. It does **not** label submission time as GPU frame time or FPS.
+
+Wheel zooms at the cursor; drag pans; click selects; double-click focuses. `Home` fits the repository, `F` fits the selection, and `Backspace` focuses the parent. Wheel over the inspector scrolls its contents instead of zooming the map.
+
+## Metrics
+
+`physical lines = code + comment-only + blank + unclassified`
+
+Recognized language classification uses pinned Tokei 12.1.2. Unknown non-blank text is explicitly unclassified, never guessed to be source code. Classification is lexical, not an AST, and documentation/configuration languages follow their respective classifier rules. See [metric definitions](docs/METRICS.md).
+
+`Area: non-blank` remains the default. Comments and unknown text participate in that metric. Zero-weight files receive a small visibility floor; reported statistics are never inflated to match that floor. Directory weights sum the effective weights of their files.
+
+### CLI
 
 ```sh
-cargo test --no-default-features
-cargo build
-cargo run -- --scan .
+cargo run --release -- --scan /path/to/repository
+cargo run --release -- --json /path/to/repository
+cargo run --no-default-features -- --scan /path/to/repository
 ```
 
-The core tests do not depend on a window system. CI builds the native app and includes an Xvfb startup smoke test.
+`--json` implies `--scan`, needs no display, and emits exact integers with schema version 1.
 
-## Next milestones
+Other options: `--no-ignore`, `--include-build`, repeatable `--exclude NAME`, and `--max-file-mib N` (1–1024; default 8).
 
-Function/type regions through optional language adapters, a persistent index, smooth animated camera transitions, incremental filesystem updates and additional 3D/tilted presentation modes. The first version is a 2D zoomable code map: it does not yet provide AST symbols, dependency edges or a 3D fly-through. Lexical colors are language-neutral hints, not a language-accurate highlighter.
+## Indexing policy
 
-No project license has been selected yet. Makepad and other dependencies retain their own licenses.
+`.git`, `.hg`, `.svn` and symbolic links are always excluded. `.gitignore`, `.ignore` and `.scopeignore` are respected by default, including outside a Git repository. Build/dependency directories such as `target`, `node_modules`, `build`, `dist` and virtual environments are excluded by default. Additional exact basenames can be excluded with `--exclude`.
+
+Only UTF-8 text is indexed. Oversized, binary/non-UTF-8, unreadable files and explicitly pruned entries are reported separately. Ignored subtrees are not traversed just to count their descendants. Text sizes are bytes read from indexed files, not allocated disk usage or Git history size.
+
+Source previews are sampled; full text is loaded on demand. The source cache is bounded to eight documents and 32 MiB, with at most three concurrent source reads per active cache. Rendering culls off-screen/subpixel nodes and has explicit node/glyph submission budgets.
+
+## Development
+
+```sh
+cargo test -p scope-core -p scope-analysis -p scope-layout -p scope-runtime
+cargo test -p scope --no-default-features
+cargo build -p scope
+python3 scripts/check_architecture.py
+```
+
+CI also validates JSON accounting, launches the GUI, exercises zoom until real source glyphs are submitted, and captures full-size/compact screenshots.
+
+See [architecture](docs/ARCHITECTURE.md), [design system](docs/DESIGN.md) and [contributing](CONTRIBUTING.md).
+
+## Current scope
+
+Implemented: 2D spatial exploration, language-aware line accounting, repository-wide summaries and real source text. Not yet implemented: AST/symbol subdivision, 3D camera, incremental filesystem watching or a persistent index. These can be added at the corresponding module boundaries rather than to the application entry point.
