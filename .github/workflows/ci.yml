@@ -32,10 +32,14 @@ jobs:
             sleep 8
             kill -0 "$pid"
             import -window root scope-overview.png
-            xdotool mousemove 600 420 click --repeat 8 --delay 150 4
+            xdotool mousemove 600 420 click 1
+            xdotool click --repeat 40 --delay 75 4
             sleep 5
             kill -0 "$pid"
             import -window root scope-zoom.png
+            xdotool key Home
+            sleep 1
+            kill -0 "$pid"
           '
           cat gui.log
           ! grep -Ei 'panicked|error expanding|error applying|shader compilation failed' gui.log
