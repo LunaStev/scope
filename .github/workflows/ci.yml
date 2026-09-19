@@ -1,0 +1,32 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb
+      - name: Core tests
+        run: cargo +stable test --no-default-features
+      - name: Build native application
+        run: cargo +stable build
+      - name: Inventory smoke test
+        run: ./target/debug/scope --scan .
+      - name: GUI startup smoke test
+        run: |
+          set +e
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a timeout 15s ./target/debug/scope . > gui.log 2>&1
+          code=$?
+          cat gui.log
+          if test "$code" != 124; then exit 1; fi
+          ! grep -Ei 'panicked|error expanding|error applying|shader compilation failed' gui.log
