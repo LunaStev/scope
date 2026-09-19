@@ -40,13 +40,11 @@ jobs:
           set -o pipefail
           before=$(mktemp -d /tmp/scope-reveal-before.XXXXXX)
           after=$(mktemp -d /tmp/scope-reveal-after.XXXXXX)
-          git archive d28d84651d65b6dbe0c3f2ddb256e53beed8b141 | tar -x -C "$before"
+          git archive 1b9690cc1866315009a68e02f8364d7e85557eb8 | tar -x -C "$before"
           git archive HEAD | tar -x -C "$after"
           cp Cargo.lock "$before/Cargo.lock"
           cp Cargo.lock "$after/Cargo.lock"
           python3 scripts/prepare_reveal_benchmark.py "$before" "$after"
-          # Workspace dependency edges changed. Reconcile the baseline's local
-          # lockfile offline, then require identical shared registry versions.
           cargo +stable metadata --offline --format-version 1 --manifest-path "$before/Cargo.toml" > /dev/null
           python3 - "$before/Cargo.lock" "$after/Cargo.lock" <<'PY'
           import sys,tomllib
@@ -58,6 +56,7 @@ jobs:
           PY
           CARGO_TARGET_DIR="$before/target" cargo +stable build --locked --release --manifest-path "$before/Cargo.toml" -p scope 2>&1 | tee evidence/before-build.log
           CARGO_TARGET_DIR="$after/target" cargo +stable build --locked --release --manifest-path "$after/Cargo.toml" -p scope 2>&1 | tee evidence/after-build.log
+          printf '%s' "$after/target/release/scope" > "$RUNNER_TEMP/scope-map-binary-path"
           xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/reveal_benchmark.py "$before/target/release/scope" "$after/target/release/scope" 2>&1 | tee evidence/reveal-test.log
       - name: Large index and warm reuse benchmark
         run: |
@@ -67,6 +66,11 @@ jobs:
           ./target/release/examples/large_index /tmp/scope-50m 20000 50000000 | tee evidence/index-50m.json
           python3 scripts/large_fixture.py /tmp/scope-100k --files 100000 --lines 100 > evidence/fixture-100k.json
           ./target/release/examples/large_index /tmp/scope-100k 100000 10000000 | tee evidence/index-100k.json
+      - name: Fifty-million-line native map coverage
+        run: |
+          set -o pipefail
+          binary=$(cat "$RUNNER_TEMP/scope-map-binary-path")
+          xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/map_scale_test.py "$binary" /tmp/scope-50m 50000000 2>&1 | tee evidence/map-scale-test.log
       - name: Preserve evidence
         if: always()
         run: |
