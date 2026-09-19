@@ -1,0 +1,23 @@
+[package]
+name = "scope"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A local, language-independent spatial codebase explorer"
+repository = "https://github.com/LunaStev/scope"
+
+[features]
+default = ["gui"]
+gui = ["dep:makepad-widgets"]
+
+[dependencies]
+ignore = "0.4"
+makepad-widgets = { version = "=1.0.0", optional = true }
+
+[[bin]]
+name = "scope"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
