@@ -1,9 +1,9 @@
 use makepad_widgets::*;
-use scope::camera::Camera;
-use scope::layout::{self, Box2, WORLD};
-use scope::model::{FileInfo, Tree};
-use scope::scanner::{self, ScanOptions};
-use scope::source::{self, Document, Ink};
+use ::scope::camera::Camera;
+use ::scope::layout::{self, Box2, WORLD};
+use ::scope::model::{FileInfo, Tree};
+use ::scope::scanner::{self, ScanOptions};
+use ::scope::source::{self, Document, Ink};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc, atomic::{AtomicBool, Ordering}};
@@ -13,7 +13,7 @@ live_design! {
     use link::shaders::*;
     pub CodeMap = {{CodeMap}} {
         width: Fill, height: Fill,
-        draw_bg: {color: #0b1016}
+        draw_bg: {color: #0c1016}
         quad: {color: #1c2935}
         label: {text_style: <THEME_FONT_REGULAR> {font_size: 11}, color: #c5d1df}
         code: {text_style: <THEME_FONT_CODE> {font_size: 11}, color: #bac9d7}
