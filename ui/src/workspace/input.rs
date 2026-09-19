@@ -4,7 +4,7 @@ use ::layout::wheel_zoom_factor;
 impl Workspace {
     pub(super) fn input(&mut self,cx:&mut Cx,event:&Event) {
         if self.state.session.poll(){self.redraw_view(cx);}
-        if matches!(event,Event::NextFrame(_))&&self.state.frame.pending_chunks>0{self.redraw_view(cx);}
+        if matches!(event,Event::NextFrame(_))&&self.state.frame.needs_redraw{self.redraw_view(cx);}
         match event.hits(cx,self.draw_bg.area()) {
             Hit::FingerDown(e)=>{
                 if self.state.viewport.contains(e.abs.x,e.abs.y){
@@ -24,6 +24,7 @@ impl Workspace {
                 }else if self.state.viewport.contains(e.abs.x,e.abs.y){
                     self.state.session.camera.zoom_at(wheel_zoom_factor(e.scroll.y),e.abs.x,e.abs.y);self.redraw_view(cx);
                 }
+                if std::env::var_os("SCOPE_INPUT_TRACE").is_some(){eprintln!("scope input: kind=scroll timestamp_ns={}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());}
             }
             Hit::FingerHoverIn(e)|Hit::FingerHoverOver(e)=>{
                 let hit=if self.state.viewport.contains(e.abs.x,e.abs.y){self.state.session.hit(e.abs.x,e.abs.y)}else{None};
@@ -31,12 +32,7 @@ impl Workspace {
             }
             Hit::FingerHoverOut(_)=>{if self.state.session.hovered.take().is_some(){self.redraw_view(cx);}}
             Hit::KeyDown(e)=>{
-                match e.key_code{
-                    KeyCode::Home=>self.state.session.focus(0),
-                    KeyCode::KeyF=>{let id=self.state.session.selected.unwrap_or(0);self.state.session.focus(id);}
-                    KeyCode::Backspace=>self.state.session.parent(),
-                    _=>return,
-                }
+                match e.key_code{KeyCode::Home=>self.state.session.focus(0),KeyCode::KeyF=>{let id=self.state.session.selected.unwrap_or(0);self.state.session.focus(id);},KeyCode::Backspace=>self.state.session.parent(),_=>return,}
                 self.redraw_view(cx);
             }
             _=>{}

@@ -5,6 +5,7 @@ pub mod hierarchy;
 pub mod source;
 pub mod squarify;
 pub mod frame;
+pub mod tiles;
 pub use camera::{Camera,wheel_zoom_factor};
 pub use geometry::{Box2,WORLD};
 pub use hierarchy::{hit_test,tree_layout,tree_layout_in};
