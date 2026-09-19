@@ -1,17 +1,25 @@
-# Design and navigation
+# Compact explorer design
 
-The visual hierarchy is repository controls, navigation, summary cards, map context, the spatial map with inspector, and operational footer. Palette tokens live in `render/src/palette.rs`; native control styling lives in `ui/src/theme.rs`. The inspector scrolls independently and can be hidden.
+The source map is the primary surface. Avoid turning a spatial explorer into a dashboard of large statistic cards, repeating the brand in several places or adding controls for unimplemented actions.
 
-## One source representation
+## Window hierarchy
 
-Actual source text is present at overview scale. Do not add a miniature-bars pass, sampled-line substitute, zoom threshold, or a second layout for reading mode. A file's `SourceLayout` is world-space geometry computed once when the scene is indexed or its area metric changes. The camera applies scale and translation only. A microscopic glyph naturally covers less than a pixel; it is still the same glyph, not a preview primitive.
+- 44 px repository row: Scope, editable path, Open, Re-index and Details.
+- 38 px navigation row: Overview, Up, Read, path search, Area and Source.
+- 30 px summary line: exact workspace file/line/code totals and text size.
+- Map occupying the remaining body, with an optional 248–280 px detail panel.
+- 24 px operational footer: input hints, pending preparation, cached batch reuse and CPU submission time.
 
-Text columns depend on file shape, line count and source width, never camera zoom. Source loading and lexical preparation happen before snapshot publication, not inside drawing. Only off-screen geometry is culled. Text layer visibility is a user toggle, not an automatic level-of-detail switch.
+The detail panel scrolls independently. At widths below 720 px it yields to the map. The 960 x 640 compact window is included in GUI regression captures. Numeric values use measured glyph width for right alignment, not an estimate from string length.
 
-## Camera controls
+## Visual language
 
-Wheel zoom is cursor-anchored with logarithmic sensitivity 0.022. Double-click targets a readable 12 px source size at the pointer, preserving that world-space anchor. `F`/Read focuses a file's first column at readable scale. Directories fit normally; Home restores the repository overview. These operations do not change glyph positions or column layout.
+Use quiet graphite backgrounds, restrained separators, small flat controls, subdued language colors and a single sage selection accent. Color tokens live in `render/src/palette.rs`; native controls in `ui/src/theme.rs`. Comments, unknown text and classification categories remain distinguishable without making every section a bright card.
 
-## Validation
+Directory padding and inter-file gutters are compact. Source columns use their own actual width plus a three-character-cell gap. No extra horizontal space is distributed among columns. A very long line affects only its column rather than every column of the file.
 
-GUI regression tests must show real source glyph submissions before the first zoom event, including fonts below 7 px. They must also test a double-click directly reaching readable scale. Screenshots come from the actual native app. Runtime tests verify source snapshot stability and layout tests verify camera scaling without reflow.
+## Source and camera
+
+There is one actual-source representation, including at microscopic scale. Cached glyph geometry is enlarged by camera scale/translation; reading does not switch modes or reflow lines. Double-click reaches the readable 12 px target under the cursor. F/Read starts at the file's beginning, directories fit normally, and Home restores the overview.
+
+Progressive cold geometry preparation is independent of zoom and is labeled in the footer. It must continue without input until ready. It is not a hidden source-visibility threshold. See RENDERING.md for ownership, memory and validation.

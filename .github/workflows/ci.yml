@@ -38,16 +38,23 @@ jobs:
           cp target/release/scope /tmp/scope-after
           baseline=$(mktemp -d /tmp/scope-before.XXXXXX)
           git archive 455a32084163cd17b42fb219781d7197df322a49 | tar -x -C "$baseline"
+          cp Cargo.lock "$baseline/Cargo.lock"
           python3 - "$baseline" <<'PY'
           from pathlib import Path
           import sys
-          p=Path(sys.argv[1])/'render/src/map.rs'
+          root=Path(sys.argv[1])
+          p=root/'render/src/map.rs'
           s=p.read_text();needle='stats.cpu_submit_ms = start.elapsed().as_secs_f64()*1000.0;'
           assert needle in s
           p.write_text(s.replace(needle,needle+'\n        eprintln!("scope perf cpu_ms={:.3}",stats.cpu_submit_ms);'))
+          # Remove only per-document trace I/O from the measured section.
+          p=root/'render/src/document.rs'
+          p.write_text(p.read_text().replace('var_os("SCOPE_TRACE")','var_os("SCOPE_TRACE_SOURCE")'))
           PY
-          CARGO_TARGET_DIR="$PWD/target" cargo +stable build --release -p scope --manifest-path "$baseline/Cargo.toml"
-          cp target/release/scope /tmp/scope-before-binary
+          # Isolated target trees prevent stale workspace artifacts from mixing
+          # old and new module APIs. Both builds use the same resolved lockfile.
+          CARGO_TARGET_DIR="$baseline/target" cargo +stable build --locked --release -p scope --manifest-path "$baseline/Cargo.toml"
+          cp "$baseline/target/release/scope" /tmp/scope-before-binary
           xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/performance.py /tmp/scope-before-binary /tmp/scope-after
       - name: Preserve evidence
         if: always()

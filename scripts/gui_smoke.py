@@ -27,6 +27,10 @@ def launch(root,name,minimum):
         record=wait_ready(proc,log,minimum)
         wid=xdo('search','--pid',proc.pid,'--name','Scope').splitlines()[0]
         xdo('windowmove',wid,0,0)
+        # The trace precedes presentation. Allow a completed warm redraw before
+        # capturing, rather than saving a still-pending previous frame.
+        xdo('mousemove',580,450);time.sleep(.5)
+        record=wait_ready(proc,log,minimum);time.sleep(.15)
         return proc,file,log,wid,record
     except BaseException:
         proc.terminate();proc.wait(timeout=10);file.close();raise

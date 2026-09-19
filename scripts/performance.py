@@ -2,6 +2,7 @@
 Run under Xvfb: performance.py BEFORE_BINARY AFTER_BINARY.
 """
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -49,7 +50,7 @@ def run(binary,label,root):
             assert all(int(r['lines'])==12000 for r in samples), 'Different source populations compared'
             if label=='after':assert all(r['built']=='0' and int(r['reused'])>0 for r in samples),samples
             values=sorted(r['cpu_ms'] for r in samples)
-            return {'samples':len(values),'physical_lines':12000,'median_cpu_ms':statistics.median(values),'p95_cpu_ms':values[int(.95*(len(values)-1))],'min_cpu_ms':min(values),'max_cpu_ms':max(values),'rebuilt_chunks':sum(int(r.get('built',0)) for r in samples)}
+            return {'samples':len(values),'physical_lines':12000,'median_cpu_ms':statistics.median(values),'p95_cpu_ms':values[math.ceil(.95*len(values))-1],'min_cpu_ms':min(values),'max_cpu_ms':max(values),'rebuilt_chunks':sum(int(r.get('built',0)) for r in samples)}
         finally:
             proc.terminate()
             try:proc.wait(timeout=10)
@@ -61,5 +62,5 @@ with tempfile.TemporaryDirectory(prefix='scope-perf-') as folder:
         path=root/f'group_{i//6}'/f'module_{i:02}.rs';path.parent.mkdir(exist_ok=True)
         path.write_text(''.join(f'fn f_{j}() {{ let x = {j}; }} // actual line {j}\n' for j in range(500)))
     before=run(sys.argv[1],'before',root);after=run(sys.argv[2],'after',root)
-report={'environment':'same Ubuntu Actions runner, release builds, Xvfb, Mesa software OpenGL','measurement':'CPU map submission only, warmed glyph geometry, 24 paired small pan events; not GPU frame time or FPS','before_commit':'455a32084163cd17b42fb219781d7197df322a49','before':before,'after':after}
+report={'environment':'same Ubuntu Actions runner, release builds, Xvfb, Mesa software OpenGL','measurement':'CPU map submission only, warmed glyph geometry, 24 paired small pan events; not GPU frame time or FPS','p95_method':'nearest rank','before_commit':'455a32084163cd17b42fb219781d7197df322a49','before':before,'after':after}
 (out/'performance.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
