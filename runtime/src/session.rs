@@ -5,9 +5,9 @@ use layout::{self,Box2,Camera,SourceLayout};
 use std::{collections::HashSet,path::PathBuf,sync::{Arc,mpsc,atomic::{AtomicBool,AtomicU64,Ordering}}};
 static NEXT_SCENE:AtomicU64=AtomicU64::new(1);
 pub struct Snapshot{pub generation:u64,pub tree:Arc<Tree>,pub rectangles:Vec<Box2>,pub pages:Vec<Option<SourceLayout>>}
-impl Snapshot{
+impl Snapshot {
     pub fn new(tree:Arc<Tree>,metric:AreaMetric)->Self{Self::with_bounds(tree,metric,layout::WORLD)}
-    pub fn with_bounds(tree:Arc<Tree>,metric:AreaMetric,bounds:Box2)->Self{
+    pub fn with_bounds(tree:Arc<Tree>,metric:AreaMetric,bounds:Box2)->Self {
         let rectangles=layout::tree_layout_in(&tree,metric,bounds);
         let pages=tree.nodes.iter().zip(&rectangles).map(|(node,&bounds)|node.file.as_ref().map(|file|SourceLayout::for_shape(bounds,&file.shape))).collect();
         Self{generation:NEXT_SCENE.fetch_add(1,Ordering::Relaxed),tree,rectangles,pages}
@@ -15,7 +15,7 @@ impl Snapshot{
 }
 type JobResult=Result<(Snapshot,AreaMetric),String>;
 enum JobEvent{Progress(Progress),Complete(JobResult)}
-pub struct Session{
+pub struct Session {
     pub root:PathBuf,pub options:ScanOptions,pub snapshot:Option<Arc<Snapshot>>,
     pub documents:crate::documents::Documents,pub progress:Progress,pub viewport:Box2,bounds:Box2,
     pub camera:Camera,pub selected:Option<usize>,pub hovered:Option<usize>,pub focus_pending:Option<usize>,
@@ -23,20 +23,20 @@ pub struct Session{
     pub metric:AreaMetric,pub requested_metric:AreaMetric,
     rx:Option<mpsc::Receiver<JobEvent>>,cancel:Arc<AtomicBool>,wake:Wake,
 }
-impl Default for Session{
+impl Default for Session {
     fn default()->Self{Self{root:PathBuf::new(),options:ScanOptions::default(),snapshot:None,documents:crate::documents::Documents::default(),progress:Progress::default(),viewport:Box2::default(),bounds:layout::WORLD,camera:Camera::default(),selected:None,hovered:None,focus_pending:Some(0),query:String::new(),matches:HashSet::new(),matched_files:0,sources:true,status:"Open a source directory".into(),metric:AreaMetric::default(),requested_metric:AreaMetric::default(),rx:None,cancel:Arc::new(AtomicBool::new(false)),wake:noop}}
 }
 impl Drop for Session{fn drop(&mut self){self.cancel.store(true,Ordering::Relaxed);}}
-impl Session{
+impl Session {
     pub fn busy(&self)->bool{self.rx.is_some()}
-    pub fn open(&mut self,root:PathBuf,options:ScanOptions,wake:Wake){
+    pub fn open(&mut self,root:PathBuf,options:ScanOptions,wake:Wake) {
         self.cancel.store(true,Ordering::Relaxed);self.cancel=Arc::new(AtomicBool::new(false));
         self.root=root.clone();self.options=options.clone();self.wake=wake;
         let previous=self.snapshot.take();self.selected=None;self.hovered=None;
         self.documents=crate::documents::Documents::default();self.documents.wake=wake;self.progress=Progress::default();
         self.matches.clear();self.matched_files=0;self.focus_pending=Some(0);self.status=format!("Indexing {}",root.display());
         let(tx,rx)=mpsc::channel();self.rx=Some(rx);let cancel=self.cancel.clone();let metric=self.requested_metric;let bounds=self.bounds;
-        std::thread::spawn(move||{
+        std::thread::spawn(move|| {
             let prior=previous.as_ref().map(|s|s.tree.as_ref());
             let result=scan_with_progress(&root,&options,&cancel,prior,|p|{let _=tx.send(JobEvent::Progress(p));wake();}).map(|tree|(Snapshot::with_bounds(Arc::new(tree),metric,bounds),metric));
             let _=tx.send(JobEvent::Complete(result));wake();
@@ -44,39 +44,57 @@ impl Session{
     }
     pub fn refresh(&mut self){self.open(self.root.clone(),self.options.clone(),self.wake);}
     pub fn cycle_metric(&mut self){self.requested_metric=self.requested_metric.next();self.relayout();}
-    fn relayout(&mut self){
-        let Some(snapshot)=&self.snapshot else{return;};let tree=snapshot.tree.clone();let metric=self.requested_metric;let wake=self.wake;let bounds=self.bounds;
-        let(tx,rx)=mpsc::channel();self.rx=Some(rx);self.status="Rebuilding spatial layout".into();
-        std::thread::spawn(move||{let _=tx.send(JobEvent::Complete(Ok((Snapshot::with_bounds(tree,metric,bounds),metric))));wake();});
+    fn relayout(&mut self) {
+        let Some(snapshot)=&self.snapshot else{return;};
+        self.layout_tree(snapshot.tree.clone(),None);
     }
-    pub fn poll(&mut self)->bool{
+    fn layout_tree(&mut self,tree:Arc<Tree>,obsolete:Option<Snapshot>) {
+        let metric=self.requested_metric;let bounds=self.bounds;let wake=self.wake;
+        let(tx,rx)=mpsc::channel();self.rx=Some(rx);self.status="Preparing spatial layout".into();
+        std::thread::spawn(move|| {
+            // Release rejected layouts off the event thread as well.
+            drop(obsolete);
+            let _=tx.send(JobEvent::Complete(Ok((Snapshot::with_bounds(tree,metric,bounds),metric))));wake();
+        });
+    }
+    pub fn poll(&mut self)->bool {
         let mut changed=self.documents.poll();
-        loop{
-            let event=match self.rx.as_ref().map(|rx|rx.try_recv()){
+        loop {
+            let event=match self.rx.as_ref().map(|rx|rx.try_recv()) {
                 Some(Ok(event))=>event,
                 Some(Err(mpsc::TryRecvError::Disconnected))=>JobEvent::Complete(Err("Index worker ended without a snapshot".into())),
                 _=>break,
             };changed=true;
-            match event{
+            match event {
                 JobEvent::Progress(p)=>{self.progress=p;self.status=format!("Indexing · {} files · {} lines",model::format::count(p.indexed),model::format::count(p.lines));}
-                JobEvent::Complete(result)=>{
+                JobEvent::Complete(result)=> {
                     self.rx=None;
-                    match result{
-                        Ok((snapshot,metric))=>{
+                    match result {
+                        Ok((snapshot,metric))=> {
                             let same_shape=snapshot.rectangles.first().is_some_and(|r|*r==self.bounds);
-                            self.root=snapshot.tree.root.clone();self.snapshot=Some(Arc::new(snapshot));self.metric=metric;
-                            self.selected=self.selected.or(Some(0));self.focus_pending=self.selected;self.status="Ready".into();self.update_matches();
-                            if metric!=self.requested_metric||!same_shape{self.relayout();}
+                            if metric!=self.requested_metric||!same_shape {
+                                // Do not briefly publish, rasterize and discard
+                                // a layout made before the window acquired its size.
+                                self.layout_tree(snapshot.tree.clone(),Some(snapshot));
+                                break;
+                            }
+                            self.root=snapshot.tree.root.clone();
+                            let old=self.snapshot.replace(Arc::new(snapshot));
+                            if let Some(old)=old{std::thread::spawn(move||drop(old));}
+                            self.metric=metric;self.selected=self.selected.or(Some(0));self.focus_pending=self.selected;
+                            self.status="Ready".into();self.update_matches();
                         }
                         Err(error)=>self.status=error,
-                    }break;
+                    }
+                    break;
                 }
             }
-        }changed
+        }
+        changed
     }
-    /// Resize changes the scene aspect, not the behavior of ordinary zoom.
-    pub fn resize(&mut self,view:Box2){
-        if view.w<1.0||view.h<1.0{return;}let next=layout::world_for_viewport(view);let change=(next.w-self.bounds.w).abs()>0.5;
+    pub fn resize(&mut self,view:Box2) {
+        if view.w<1.0||view.h<1.0{return;}
+        let next=layout::world_for_viewport(view);let change=(next.w-self.bounds.w).abs()>0.5;
         self.viewport=view;self.bounds=next;if change&&self.snapshot.is_some()&&!self.busy(){self.relayout();}
     }
     pub fn filter(&mut self,query:String){self.query=query.trim().to_lowercase();self.update_matches();}
@@ -87,8 +105,22 @@ impl Session{
     pub fn parent(&mut self){let id=self.snapshot.as_ref().and_then(|s|s.tree.nodes.get(self.selected.unwrap_or(0))).and_then(|n|n.parent).unwrap_or(0);self.focus(id);}
     pub fn hit(&self,x:f64,y:f64)->Option<usize>{let s=self.snapshot.as_ref()?;let(x,y)=self.camera.unproject(x,y);layout::hit_test(&s.tree,&s.rectangles,x,y)}
 }
-#[cfg(test)]mod tests{
+#[cfg(test)]
+mod tests {
     use super::*;
     #[test]fn initial_snapshot_is_lightweight(){let t=tempfile::tempdir().unwrap();std::fs::write(t.path().join("x.wave"),"fun main() {}\n".repeat(1000)).unwrap();let tree=analysis::scan(t.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap();assert!(tree.source_memory_bytes<6000);let s=Snapshot::new(Arc::new(tree),AreaMetric::Lines);assert!(s.pages.iter().any(Option::is_some));}
     #[test]fn layout_reuses_shapes_but_changes_generation(){let t=tempfile::tempdir().unwrap();std::fs::write(t.path().join("x.rs"),"let x=1;\n").unwrap();let tree=Arc::new(analysis::scan(t.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap());let a=Snapshot::new(tree.clone(),AreaMetric::Lines);let b=Snapshot::new(tree.clone(),AreaMetric::Bytes);assert!(Arc::ptr_eq(&a.tree,&b.tree));assert_ne!(a.generation,b.generation);}
+    #[test]
+    fn obsolete_initial_aspect_is_never_published() {
+        let mut session=Session::default();session.bounds=Box2::new(0.0,0.0,8000.0,2560.0);
+        let snapshot=Snapshot::new(Arc::new(Tree::new("fixture".into())),AreaMetric::default());
+        let(tx,rx)=mpsc::channel();session.rx=Some(rx);
+        tx.send(JobEvent::Complete(Ok((snapshot,AreaMetric::default())))).unwrap();
+        session.poll();assert!(session.snapshot.is_none());assert!(session.busy());
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+        while session.busy()&&std::time::Instant::now()<deadline {
+            std::thread::sleep(std::time::Duration::from_millis(1));session.poll();
+        }
+        assert_eq!(session.snapshot.as_ref().unwrap().rectangles[0],session.bounds);
+    }
 }

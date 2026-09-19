@@ -2,35 +2,38 @@
 
 ## Ownership
 
-A `Snapshot` owns the tree, file revision stamps, compact per-line width indices, metric-derived rectangles and fixed source pages. It does not retain repository-wide source/token strings. `Documents` prepares actual source on background workers at any zoom level and retains a bounded working set. `GeometryCache` owns native draw lists keyed by `(node, column, block, tile)`, scene generation and display DPI.
+A snapshot owns measured tree data, compact source widths and fixed world-space pages. Source text and lexical runs are prepared on background workers with a 128 MiB resident-document accounting budget. The renderer retains actual glyph geometry; it does not swap text for a line-bar or thumbnail representation at a zoom threshold.
 
-Indexing, source preparation and GPU geometry residency are separate. The first map does not wait for the whole repository's glyphs. A missing resident source is pending work, not an instruction to switch from bars into source at a zoom threshold. No alternative representation is substituted.
+## First paint is separate from indexing
 
-## Geometry and clipping
+Finishing the index must not trigger a full synchronous walk of every source tile. Presentation now uses a resumable DFS (at most 2,048 edge/node visits per pass), progressively retained node batches and separately scheduled labels (at most 256 candidates per pass). A directory with huge fan-out never pushes all its children onto a stack at once.
 
-`layout::node_frame` is the single header/content allocator used by both treemap subdivision and annotations. File and directory names/counts are measured, ellipsized and clipped within that region. Counts are immutable model values. Rectangle edges are clipped in f64 before GPU float conversion, avoiding synthetic borders on the viewport edge at large zoom.
+Each box is a single fill/border shader instance, rather than five quads. Background and measured-label draw lists are keyed by scene, camera, viewport, DPI and search query. Source-ready events reuse those lists. Selection and hover are lightweight border overlays and do not invalidate the static layers.
 
-`world_for_viewport` accounts for the usable map width and height and the overview's 12 px margin. Resize may rebuild the layout; pan/zoom only transforms an existing scene. Source columns keep local maximum line widths plus three character cells of gap. Candidate column counts span small counts and sampled larger counts so a narrow search around average line width does not unnecessarily leave a large blank bottom.
+The first layout is published only after its aspect and area metric match the latest requested viewport. An obsolete initial layout is not briefly displayed, populated with source and immediately discarded.
 
-Source aspect and line lengths still affect unused space inside an individual file; text is not stretched or clipped to pretend every rectangle is completely full.
+## Cold source admission
 
-## Cold / warm paths
+`layout::tiles::TileCursor` produces visible 32-line by 128-character tiles lazily. Ready, pending and worker-waiting file queues are distinct. Completed reads are promoted directly to the ready queue. Missing tails are not scanned to compute an exact remaining-block count. The footer reports queued regions instead.
 
-Each cold glyph tile covers at most 32 lines and 128 character columns. A very long source line is split horizontally rather than creating one unbounded draw job. Instances are built at canonical size 16 and retain chunk-local coordinates. Warm camera movement appends the existing list and changes only camera/clipping/dimming uniforms.
+A preparation pass admits at most 128 candidate checks, two new glyph tiles and 8,192 source character instances across the entire map, not per file. A roughly four-millisecond elapsed CPU guard applies before the first tile too. Time is a soft guard: native font layout/rasterization and a single admitted tile are not preemptible. This is not a GPU frame deadline.
 
-Cold work has an approximately 5 ms soft CPU preparation budget, with at most two new tiles per file in one pass. A tile can exceed this budget on slow machines; this is not a hard frame deadline. Fair file ordering prevents the first large file from consuming all cold preparation. Completed idle views stop requesting redraws.
+Only resident tiles are replayed and pinned. Missing-tile discovery does not happen again just to render cached tiles. Geometry eviction is attempted only when the corresponding source document is ready. Full I/O capacity is reported as `Full`, not as a newly queued read. When reads are the only possible progress, their completion signal wakes the UI rather than a busy redraw loop.
 
-Off-screen/subpixel file rectangles, off-screen columns and off-screen tiles are culled. The visible working set is pinned before eviction. When it exceeds the geometry budget, the footer reports a limit and stops unproductive automatic rebuild attempts. Focusing another/smaller region makes that region's detail eligible. The renderer does not promise to draw every character of a fifty-million-line repository simultaneously.
+Document memory accounting runs on preparation workers. Heavy evicted token allocations are released off the event thread. Camera changes retain glyph tiles while restarting the bounded visibility/cold-work cursors for the new region.
 
-## Residency accounting
+## Continuous geometry
 
-- Documents: 128 MiB accounted source/run capacity, at most 256 entries and two active preparation workers.
-- Glyph geometry: one million glyphs and 4,096 retained draw-list entries; glyph count is not a byte measurement.
-- File read limit: eight MiB by default, configurable independently.
-- Index: approximately four bytes per physical-line width plus block maxima, file/tree records and layout data. It scales with indexed input.
+Columns use their own longest line plus three character cells of separation. Ordinary zoom changes only the camera, not line/column positions. Shared node-frame geometry controls both folder allocation and clipped names/counts. Screen clipping is done in f64 before GPU conversion and does not invent edges at viewport cuts.
 
-In-flight preparation, renderer/font atlases, native allocations, GPU copies and other process state are additional memory. UI counters must distinguish line index, resident source and glyph count; none is advertised as a total-memory cap. Size/mtime checks reject source revisions that differ from the indexed record; same-size edits with deliberately preserved timestamps are not detected by a content hash.
+Resize may recompute the world aspect. The overview includes its 12-pixel margin. Source aspect and line lengths can still leave some space within an individual file; text is not distorted to force complete area occupancy.
 
-## Validation
+## Accounting and limits
 
-GUI tests exercise overview source before zoom, readable double-click, retained reuse, zoom round trips, blank files and window resizing. Separate generated stress fixtures measure only indexing, layout and same-process metadata reuse. Peak Linux RSS in those headless tests excludes a window and resident glyph/source preparation; it cannot establish full-app GPU performance on Chromium or Fuchsia.
+The geometry cache retains at most one million glyphs and 4,096 tile entries. Node discovery retains the existing 50,000 visible-node safety limit. Detail-budget exhaustion stops futile automatic rebuilding and is shown in the footer; focusing a smaller region changes the eligible working set. Limits are accounting bounds, not total process RAM or GPU-memory caps.
+
+Snapshots, in-flight source preparation, font atlases, native allocations, retired data and GPU copies require additional memory. Same-process index reuse is based on size/mtime, not a persistent content-hashed index.
+
+## Verification
+
+Unit tests cover cursor suspension, huge line widths, admission limits, explicit I/O capacity and initial-aspect publication. GUI regressions preserve real source before zoom, zoom round trips, clipping, blank files and compact windows. The first-paint benchmark separately measures the post-index map submission path and input-handler latency during detail population. These are not FPS or GPU-completion measurements, and generated fixtures are not Chromium/Fuchsia checkouts.
