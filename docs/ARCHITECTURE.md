@@ -1,38 +1,38 @@
 # Root module architecture
 
-Each major module sits directly at the repository root. Its package and import names match its directory. The executable in `app/` is still called `scope`.
+Each major module sits directly at the repository root; directory, package and import names agree. Only the executable package in `app/` is named `scope`.
 
-| Module | Owns |
+| Module | Ownership |
 | --- | --- |
-| `model` | `Tree`, `Stats`, `Document`, source runs and formatting |
-| `analysis` | File policy, bounded reads, metric classification and text preparation |
-| `layout` | Treemap, camera, hit-testing and fixed packed source pages |
-| `runtime` | Background jobs, unique scene generations and immutable snapshot publication |
-| `render` | Retained source geometry, viewport clipping, palette and GPU resources |
-| `ui` | Compact shell, one-line summary, inspector and input routing |
-| `app` | CLI parsing and report output |
+| model | Tree, counts, file revision stamps, compact source shapes and resident documents |
+| language | Catalogue, JSON definition validation, detection, line classifiers, display lexers |
+| analysis | Ignore policy, parallel traversal, bounded reads, progress and unchanged-record reuse |
+| layout | Treemap, shared node headers, viewport fit, packed source pages, camera and hit testing |
+| runtime | Background jobs, scene generations and bounded document residency |
+| render | Retained glyph tiles, clipping, labels and native GPU resources |
+| ui | Toolbar, summary, scrollable inspector and input routing |
+| app | CLI parsing and headless reports |
 
-Dependency direction is enforced by `scripts/check_architecture.py`. Model, analysis, layout and runtime do not import Makepad. Filesystem traversal and lexical analysis never run in drawing methods.
+`check_architecture.py` enforces dependency direction. Model, language, analysis, layout and runtime do not import Makepad. Scanning and lexical preparation are background work, not draw-pass work.
 
-## Index-to-frame flow
+## Pipeline
 
-1. Analysis reads each accepted file once, measures it, prepares its complete source, and stores an `Arc<Document>` in the file node.
-2. Runtime publishes a snapshot containing the tree, treemap rectangles and packed per-file source pages. Column widths use actual content rather than equal divisions of available space.
-3. The renderer identifies intersecting files, columns and source blocks. A new block prepares retained glyph geometry once. Subsequent navigation reuses its draw list and changes camera/clipping uniforms.
-4. UI composes the map with a compact summary and selected-node details. UI and CLI consume the same measured statistics.
+1. Parallel scanner workers read accepted text, classify through language services and build a compact `SourceShape`. A bounded queue of 32 results feeds a single tree owner; this avoids keeping an unbounded pile of full-file results.
+2. Initial indexing discards source/token strings after measurement. The tree retains line widths, block maxima, file stamps and statistics. Throttled progress events let the UI report actual indexed file/line counts without pretending to know the total in advance.
+3. Layout derives treemap rectangles and fixed source pages from those shapes. The viewport aspect is part of scene layout. The same header/content allocator drives subdivision and labels.
+4. Runtime publishes an immutable versioned snapshot. Visible source is prepared by at most two background jobs, verified against the indexed revision and admitted to bounded resident storage.
+5. Rendering prepares small retained glyph tiles from resident documents. Warm camera movement reuses native draw lists; cold work is scheduled progressively at any zoom level. UI and CLI read the same measurement model.
 
-Opening a repository replaces the result receiver and cancels the earlier scan. An area-metric change shares source documents but allocates a new scene generation and source layout. Camera movement does not rebuild columns, read files or switch source representation.
+## Reuse and cancellation
 
-## Lifetime and memory
+Opening another repository replaces the result receiver and cancels the old scan. Results from the previous document cache cannot populate the new cache. Re-index shares unchanged source-shape records when path, file size and modification time match. The filesystem and ignore policy are still traversed, so deletions and new files are considered. Reuse is within the same process; no persistent cache has been implemented.
 
-The snapshot retains source and prepared lexical display strings. `Tree::source_memory_bytes` accounts for their string/run/index allocations, not the whole process or GPU atlas.
+Resizing or changing the area basis creates a new scene generation and invalidates geometry. Ordinary pan/zoom never recomputes source column layout. Source documents can be evicted independently of retained geometry because draw lists own their prepared glyph instances.
 
-The renderer additionally owns retained 128-line source blocks for the active scene. These are invalidated on scene generation, DPI or live renderer-style changes. This cache deliberately trades instance memory for reduced CPU work and buffer uploads; it has no fixed total memory ceiling. The inspector does not conflate its source allocation number with GPU memory. See RENDERING.md for the cache and shader contracts.
+## Memory ownership
 
-## UI ownership
+The line index grows with the input, but repository-wide expanded token strings are not stored. `runtime/residency.rs` provides LRU storage with frame pinning; document and geometry services have separate accounting policies. Visible geometry is pinned before cold admission so repeated misses do not evict the same current-frame working set. See [rendering](RENDERING.md) for exact accounting limits and what they exclude.
 
-`ui/src/app.rs` composes controls and routes actions. `workspace/frame.rs` places surfaces, `summary.rs` formats the single-line workspace totals, `inspector.rs` renders details, and `input.rs` handles camera/selection and independent panel scrolling. `render/src/cache.rs` owns cache keys/lifetime, not the application widget. Geometry preparation requests another frame only while visible blocks are pending.
+## Extension boundaries
 
-## Extension ownership
-
-Symbol analysis belongs under analysis with span types in model. Spatial strategies belong under layout, GPU passes under render, background index services under runtime, and shell orchestration under UI. Keep these dependencies explicit rather than growing a monolithic process entry or widget file.
+New language definitions/classifiers belong under language; AST adapters under analysis with spans in model. Layout strategies and coordinate rules belong under layout. Persistent index services belong under runtime/analysis. Render passes belong under render and window composition under UI. Do not put these into a monolithic app entry or workspace widget.

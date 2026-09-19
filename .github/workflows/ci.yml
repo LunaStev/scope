@@ -34,8 +34,10 @@ jobs:
         run: |
           set -o pipefail
           cargo +stable build --release -p runtime --example large_index
-          python3 scripts/large_fixture.py /tmp/scope-large-fixture
-          ./target/release/examples/large_index /tmp/scope-large-fixture | tee evidence/large-index.json
+          python3 scripts/large_fixture.py /tmp/scope-50m --files 20000 --lines 2500 > evidence/fixture-50m.json
+          ./target/release/examples/large_index /tmp/scope-50m 20000 50000000 | tee evidence/index-50m.json
+          python3 scripts/large_fixture.py /tmp/scope-100k --files 100000 --lines 100 > evidence/fixture-100k.json
+          ./target/release/examples/large_index /tmp/scope-100k 100000 10000000 | tee evidence/index-100k.json
       - name: Preserve evidence
         if: always()
         run: |

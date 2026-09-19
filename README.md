@@ -10,70 +10,69 @@ cd scope
 cargo run --release -- /path/to/repository
 ```
 
-Update an existing checkout with `git pull --ff-only origin master`. The executable remains `target/release/scope`. Use a release build for interactive exploration.
+Update an existing checkout with `git pull --ff-only origin master`. The executable is `target/release/scope`. Use a release build for interactive exploration.
 
-For headless reports use `--scan` or `--json` (which implies `--scan`). `cargo run --no-default-features -- --json .` needs no display.
-
-## Compact workspace
-
-A small repository toolbar, navigation/search row and one-line summary leave the main window for source exploration. Details live in a narrow, independently scrollable inspector. Numeric values are exact, grouped and aligned by measured text width. The **Details** button hides the inspector for a larger map.
-
-- Wheel: cursor-anchored zoom. Drag: pan.
-- Double-click a file: enlarge the same source under the pointer to a readable 12 px target.
-- `F` / **Read**: focus the selected file from its beginning; fit directories.
-- `Home` / **Overview**: fit the repository. `Backspace` / **Up**: focus the parent.
-- **Area**: cycle non-blank lines, physical lines, classified code lines and text bytes.
-- **Source**: toggle source visibility manually; it never switches automatically with zoom.
-
-### Closely packed code columns
-
-Each file's column arrangement is computed once in world space. A column takes the width of its own longest line, followed by **three character cells** of separation. Spare rectangle width is not distributed between columns. An unusually long line does not widen every other column. Line height is 1.65 times the nominal font size. No source lines are truncated or rearranged during zoom.
-
-## Retained source rendering
-
-Actual source is rendered at overview scale, not replaced with line bars, thumbnails or a different reading view. Zoom changes the scale of those same characters.
-
-Source is prepared in fixed blocks of up to 128 lines. Each block retains its Makepad draw list and glyph instances. Warm pan/zoom reuses those lists and updates camera/clipping uniforms, instead of walking every lexical run, slicing strings and rebuilding glyph instances every frame. Files, columns and blocks outside the viewport are culled.
-
-Cold blocks are prepared progressively, yielding between blocks after an approximately 8 ms CPU preparation budget. This is a soft budget, not a frame-time guarantee. The footer indicates pending preparation. It is independent of zoom level and never substitutes another source representation. A completed idle view does not request continuous redraws.
-
-Geometry is invalidated when the scene, display DPI or live renderer style changes. Snapshot source and cached glyph geometry occupy memory; this is not a fixed-memory renderer. The inspector's **Source allocation** measures retained CPU source data, not total process or GPU memory. See [rendering details](docs/RENDERING.md).
+Headless reports: `--scan` or `--json`. `cargo run --no-default-features -- --json .` needs no display. `--threads N` controls indexing workers (1–32; automatic selection is capped at eight).
 
 ## Root modules
 
 ```text
 scope/
-  app/          Process entry, command-line arguments, text/JSON reporting
-  model/        Shared tree, source-document and metric types
-  analysis/     Read-only scanning, ignore policy and lexical analysis
-  layout/       Treemap, camera, hit tests and packed source geometry
-  runtime/      Background indexing and versioned scene snapshots
-  render/       Retained GPU source batches, clipping and map presentation
-  ui/           Compact shell, summary, inspector and input handling
+  app/          Process entry, CLI and reports
+  model/        Tree, source shape, documents and measurement contracts
+  language/     Language catalogue, detection, classifiers and highlighting
+  analysis/     Bounded parallel scanning and index reuse
+  layout/       Treemap, shared node frames, packed code and camera
+  runtime/      Background jobs, snapshots and resident documents
+  render/       Retained glyph tiles, clipping and annotations
+  ui/           Toolbar, summary, inspector and input
   docs/
   scripts/
   Cargo.toml
 ```
 
-Directories, package names and imports use these names without a project prefix. The executable package alone is named `scope`. Independent modules remain a Cargo workspace, with `app` as the default member. Analysis, model, layout and runtime have no GUI dependencies.
+No `crates/` container or `scope-*` module prefixes. All modules are independent workspace packages. Only the executable package is named `scope`. Headless modules do not depend on Makepad.
 
-## Measurements
+## Compact map and continuous source
+
+A small toolbar and one-line summary leave the main window for the code map. **Details** toggles the independently scrollable inspector. Counts use the measured tree, grouped digits and measured text alignment.
+
+Source columns use their own longest line plus three character cells of separation; spare tile width is not spread between columns. Allocation and folder/file annotations share the same world-space header geometry. Labels are clipped to that header and omit the count before colliding with the name. Their statistics never change because of zoom.
+
+The map's initial layout adapts to the available viewport, including its height. Resizing the window or changing the area metric can recompute the scene. Ordinary pan/zoom does not reflow the code.
+
+- Wheel zooms at the cursor; drag pans.
+- Double-click a file enlarges the same source under the pointer to a 12 px reading target.
+- `F` / **Read** opens the beginning of a file at readable scale or fits a directory.
+- `Home` / **Overview** fits the repository; `Backspace` / **Up** focuses its parent.
+- **Area** cycles non-blank lines, physical lines, code lines and text bytes.
+- **Source** manually toggles source; no automatic representation switch occurs with zoom.
+
+## Large-repository pipeline
+
+The initial index retains counts, file revision metadata and compact per-line widths, **not every source string and token**. Parallel workers feed a bounded result queue. Progress is throttled to approximately 150 ms. Re-index reuses unchanged records in the same process based on file size and modification time; there is no persistent disk index or content-hash guarantee.
+
+Real source is prepared on background workers at any zoom level when needed for the visible region. It is never replaced with sampled bars or thumbnails. This changes when data is resident, not how code is represented. The resident-document cache has a 128 MiB accounting budget and at most two active preparation jobs.
+
+Glyph geometry is split into 32-line by 128-character tiles. Off-screen files, columns and tiles are culled. Warm pan/zoom reuses native draw lists, updating only the camera/clipping transform. Cold preparation yields after an approximately 5 ms soft budget and at most two new tiles per file per pass. The geometry cache is limited to one million glyphs and 4,096 entries. These are accounting limits, not total-process or GPU-memory caps.
+
+When the visible working set exceeds a detail budget, the footer says so instead of continually evicting and rebuilding that same view. Focusing a smaller region makes its detail eligible. Pending reads and preparation are also visible in the footer. A completed idle view does not request continuous redraws.
+
+## Language services
+
+`language/` is the shared service for the scanner and source preparation, with JSON definitions, validated registration and a pinned Tokei catalogue adapter. Detection checks exact filenames, compound extensions and shebangs without reopening or executing files. Wave is explicitly recognized and has its own line classifier and stateful display lexer. Unknown text remains unclassified rather than being counted as guessed code. See [language contracts](docs/LANGUAGE.md).
 
 ```text
 physical lines = code + comment-only + blank + unclassified
 ```
 
-The summary is repository-wide; the inspector's first section is selected-node data. Language shares explicitly use workspace physical lines. Tokei 12.1.2 performs lexical classification; unknown non-blank text stays unclassified. Counts are never inflated to match the minimum visual area of empty files. Units adapt between B/KiB/MiB/GiB. See [metric definitions](docs/METRICS.md).
+The summary is repository-wide. The selected-node inspector separates line categories, index memory, resident source, reused files and warnings. Language shares use workspace physical lines. Byte units adapt between B/KiB/MiB/GiB.
 
-The footer reports retained source batches reused and CPU map submission time. Neither is GPU completion time, monitor FPS or a sustained performance guarantee. The matched release benchmark reports its fixture, sample count and environment separately.
+## Index policy
 
-## Indexing policy
+All repository access is local and read-only. `.git`, `.hg`, `.svn` and symlinks are excluded. `.gitignore`, `.ignore` and `.scopeignore` are respected by default. Build/dependency folder exclusions can be changed with `--include-build`; other options include `--no-ignore`, repeatable `--exclude NAME`, and `--max-file-mib N` (default eight). Only accepted UTF-8 text is indexed. Re-index after editing a file; a mismatched revision is not silently mixed with old measurements.
 
-All repository access is local and read-only. `.git`, `.hg`, `.svn` and symbolic links are excluded. `.gitignore`, `.ignore` and `.scopeignore` are respected by default; build/dependency folders are excluded by default. Options: `--no-ignore`, `--include-build`, repeatable `--exclude NAME`, `--max-file-mib N` (1–1024, default 8).
-
-Only accepted UTF-8 text is indexed. Re-index to load edits made after snapshot creation. Oversized, unreadable and binary/non-UTF-8 files are reported separately.
-
-## Development and validation
+## Validation
 
 ```sh
 cargo test --workspace
@@ -82,8 +81,8 @@ cargo build --release -p scope
 python3 scripts/check_architecture.py
 ```
 
-Linux builds need a current stable Rust toolchain and the X11/OpenGL/audio development packages required by Makepad. CI uses Ubuntu with software OpenGL, not Fedora hardware validation.
+CI verifies line accounting, language detection, parallel/serial agreement, revision reuse, cache eviction, viewport/header geometry, source rendering before zoom, zoom round trips and compact windows. It additionally measures generated five-language fixtures: 20,000 files / 50 million physical lines and 100,000 files / 10 million physical lines. Reports separate indexing, layout, same-process warm reuse and peak process RSS.
 
-GUI regression tests check all 1,200 fixture lines at overview scale before zoom, direct readable double-click, reuse without rebuilding on camera movement, blank-file behavior and a compact window. CI also runs a matched release-build CPU submission benchmark against the previous renderer and preserves real screenshots and measurements as artifacts.
+Those generated fixtures are not Chromium or Fuchsia checkouts, and headless index timings are not GPU rendering or FPS measurements. Linux GUI CI uses Ubuntu with software OpenGL; it is not Fedora hardware validation.
 
-See [architecture](docs/ARCHITECTURE.md), [design](docs/DESIGN.md) and [contributing](CONTRIBUTING.md). AST subdivision, a 3D camera, persistent indexing and incremental filesystem watching are not implemented yet.
+See [architecture](docs/ARCHITECTURE.md), [rendering](docs/RENDERING.md), [metrics](docs/METRICS.md) and [design](docs/DESIGN.md). AST subdivision, a 3D camera, persistent indexing and filesystem watching are not implemented yet.

@@ -1,23 +1,31 @@
 # Measurement contract
 
-Every total refers to accepted UTF-8 files under the active root and filtering policy. Binary/non-UTF-8, oversized and unreadable files are reported separately. Indexed bytes are file-content bytes, not allocated disk space or Git history.
+All totals refer to accepted UTF-8 files under the active root and filters. Binary/non-UTF-8, oversized and unreadable files are reported separately. Indexed bytes are file-content bytes, not disk allocation or Git history.
 
-`physical lines = code + comment-only + blank + unclassified`
+```text
+physical lines = code + comment-only + blank + unclassified
+```
 
-Physical lines follow `str::lines()`. A trailing newline does not add a phantom line. Known language classification is pinned to Tokei 12.1.2; mixed code/comment lines count as code. A language result is accepted only when its summarized line count equals the physical baseline. Unknown languages and inconsistent classifications retain their non-blank lines as unclassified rather than inventing SLOC. Lexical colors do not affect these counts.
+Physical lines use `str::lines()`; a trailing newline creates no phantom row. The language service dispatches to the independent Wave classifier or pinned Tokei 12.1.2. Mixed code/comment lines count as code. Unknown or inconsistent classification preserves non-blank text as unclassified. Known language identity does not itself imply a supported classifier. Display colors are not the authority for counts.
 
-The summary line is repository-wide. Inspector totals describe the selected node and descendants. The language section is explicitly workspace-wide; percentages divide by all indexed physical lines. Empty denominators display an em dash. Text sizes adapt between B, KiB, MiB and larger binary units; exact counts use grouping separators and measured text alignment.
+The summary and language shares are workspace-wide; selected-node inspector counts include descendants. Percentages use all indexed physical lines, with an em dash for an empty denominator. Numbers use grouping and measured glyph alignment. Byte units adapt between B, KiB, MiB and larger units.
 
-Area modes use non-blank, physical, code or text-byte weights. Zero-weight files receive a minimum effective layout weight of one; directories sum effective leaf weights. This never changes the numeric counts or source content.
+Area modes use non-blank, physical, code or byte weights. Empty/zero-weight files receive a visibility floor of one; that floor never alters measured statistics. Folder labels consume immutable model counts: camera changes do not re-count files or lines.
 
-`pruned_entries` counts explicit walker exclusions, not every ignored descendant. At most 50 warning messages are retained while the full warning count is maintained. Index elapsed time excludes drawing.
+## Index telemetry
 
-## Rendering telemetry
+`elapsed_ms` measures indexing without layout or rendering. `workers` is the configured indexing concurrency. `reused_files` counts same-process records accepted by size/mtime metadata, not a content-hash comparison. `pruned_entries` counts explicit exclusions encountered by traversal, not every ignored descendant. Warning count is complete; at most 50 warning strings are retained.
 
-The inspector's Source allocation measures retained source, lexical strings and line/run index allocations. It excludes cached draw-list instances, other process allocations and GPU memory.
+`Tree::source_memory_bytes` and JSON `line_index_bytes` now account for compact width arrays and block maxima. They do not include all tree records, source documents, glyph geometry or GPU memory. The inspector labels this number **Line index**. **Resident source** is the separate document cache's source/run-capacity accounting. Neither counter is total process memory.
 
-Footer CPU time measures a map-submission pass, not GPU completion or monitor FPS. Reused batches are retained source blocks appended without re-emitting glyphs. Preparing blocks are counted separately and request further frames until complete. A block contains at most 128 lines; partially off-screen blocks are clipped by the shader. Trace source-line counts describe submitted block lines, not an exact visible-row population and not a replacement for repository metrics.
+## Render telemetry
 
-The performance script compares the same 12,000-line fixture on the same runner in release mode after warm-up. It rejects samples with different submitted source populations and rejects optimized samples that rebuilt source blocks. Median and nearest-rank p95 are CPU submission measurements only, not cold-start cost or a hardware-wide guarantee.
+CPU map time measures command submission, not GPU completion or FPS. Retained tiles cover at most 32 lines by 128 character columns. Trace line/run counts describe submitted cached geometry, not the authoritative repository total. Pending work, background reads, errors and budget-limited detail are distinct states.
 
-All values describe a snapshot. Zoom never rereads files. Re-index refreshes statistics and displayed source together.
+Actual source is prepared on demand at any scale; navigation may cause a read after eviction. Revision mismatches are reported rather than silently mixing new text with old statistics. Deliberately preserving both file size and timestamps can defeat metadata checks; no content-hash guarantee is claimed.
+
+## Stress reports
+
+The CI fixtures separately stress 50 million lines across 20,000 files and 100,000 files with 10 million lines. They contain generated Wave/Rust/C++/Python/TypeScript code, not real Chromium or Fuchsia sources. Reports separate initial index, source-page layout and same-process warm reuse. OS page caches are not cleared. Linux VmHWM records headless process peak RSS while both the first and reused tree are alive; it excludes a GUI, resident source preparation and GPU allocations.
+
+Historical `performance.py` compares the old and retained renderer on a 12,000-line warm GUI fixture. Its CPU submission results must not be presented as large-repository loading or full-app FPS measurements.
