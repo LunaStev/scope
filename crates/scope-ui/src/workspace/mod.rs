@@ -15,7 +15,7 @@ live_design! {
     use scope_render::painter::MapPainter;
     pub Workspace = {{Workspace}} {
         width: Fill, height: Fill,
-        draw_bg: {color: #0b1018}
+        draw_bg: {color: #0c1018}
         map: <MapPainter> {}
         chrome: <MapPainter> {}
     }

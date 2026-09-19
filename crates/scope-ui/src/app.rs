@@ -10,7 +10,7 @@ live_design! {
         ui: <Root> {main_window = <Window> {
             window: {inner_size: vec2(1480,940), title: "Scope · Codebase explorer"}
             body = <View> {
-                flow: Down, show_bg: true, draw_bg: {color: #0b1018}
+                flow: Down, show_bg: true, draw_bg: {color: #0c1018}
                 <View> {
                     width: Fill, height: 68, padding: {left: 22,right: 20}, spacing: 16, align: {y: 0.5}
                     <View> {width: 122, height: Fit, flow: Down, spacing: 3
