@@ -15,18 +15,39 @@ jobs:
       - name: System libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb
+          sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb imagemagick xdotool
       - name: Core tests
         run: cargo +stable test --no-default-features
       - name: Build native application
         run: cargo +stable build
       - name: Inventory smoke test
         run: ./target/debug/scope --scan .
-      - name: GUI startup smoke test
+      - name: GUI startup and zoom smoke test
         run: |
-          set +e
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a timeout 15s ./target/debug/scope . > gui.log 2>&1
-          code=$?
+          xvfb-run -a -s '-screen 0 1600x1000x24' bash -e -c '
+            export LIBGL_ALWAYS_SOFTWARE=1
+            ./target/debug/scope . > gui.log 2>&1 &
+            pid=$!
+            trap "kill $pid 2>/dev/null || true" EXIT
+            sleep 8
+            kill -0 "$pid"
+            import -window root scope-overview.png
+            xdotool mousemove 600 420 click --repeat 8 --delay 150 4
+            sleep 5
+            kill -0 "$pid"
+            import -window root scope-zoom.png
+          '
           cat gui.log
-          if test "$code" != 124; then exit 1; fi
           ! grep -Ei 'panicked|error expanding|error applying|shader compilation failed' gui.log
+      - name: Preserve smoke test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scope-linux-smoke
+          path: |
+            gui.log
+            scope-overview.png
+            scope-zoom.png
+            Cargo.lock
+          if-no-files-found: ignore
+          retention-days: 7
