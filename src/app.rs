@@ -54,7 +54,7 @@ impl MatchEvent for App {
         if let Ok(args) = crate::arguments() {
             self.ui.text_input(id!(root_path)).set_text(cx, &args.root.to_string_lossy());
             let widget = self.ui.widget(id!(code_map));
-            if let Some(mut map) = widget.borrow_mut::<CodeMap>() { map.open(cx, args.root, args.options); }
+            if let Some(mut map) = widget.borrow_mut::<CodeMap>() { map.open(cx, args.root, args.options); };
         }
     }
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
