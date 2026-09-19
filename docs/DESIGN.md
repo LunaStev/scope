@@ -1,26 +1,17 @@
-# Interface design
+# Design and navigation
 
-## Hierarchy
+The visual hierarchy is repository controls, navigation, summary cards, map context, the spatial map with inspector, and operational footer. Palette tokens live in `render/src/palette.rs`; native control styling lives in `ui/src/theme.rs`. The inspector scrolls independently and can be hidden.
 
-1. Repository controls: brand, path, Open folder and Re-index.
-2. Navigation and lenses: path search, overview/parent/focus, area metric, source layer, inspector visibility.
-3. Overview: four statistic cards with explicit units and scope.
-4. Map context: selected path breadcrumb, current area basis or matching-file count.
-5. Spatial map and a scrollable inspector.
-6. Operational footer: navigation hints, visible geometry, CPU draw submission and cache memory.
+## One source representation
 
-No buttons represent unimplemented actions. No reset/delete/cleanup operation touches the indexed repository.
+Actual source text is present at overview scale. Do not add a miniature-bars pass, sampled-line substitute, zoom threshold, or a second layout for reading mode. A file's `SourceLayout` is world-space geometry computed once when the scene is indexed or its area metric changes. The camera applies scale and translation only. A microscopic glyph naturally covers less than a pixel; it is still the same glyph, not a preview primitive.
 
-## Tokens and spacing
+Text columns depend on file shape, line count and source width, never camera zoom. Source loading and lexical preparation happen before snapshot publication, not inside drawing. Only off-screen geometry is culled. Text layer visibility is a user toggle, not an automatic level-of-detail switch.
 
-The shared palette is `scope-render/src/palette.rs`; widget styling is `scope-ui/src/theme.rs`. Backgrounds are near-black blue, panels have a slightly lighter elevation, borders are subdued, and mint is reserved for active/primary information. Comments use violet, blanks muted blue, and unclassified text amber. Language color selection is shared by map and legend.
+## Camera controls
 
-The layout uses 20 px outer gutters, 12 px card gaps, a 38 px map-context bar and a 32 px status footer. Numeric headline sizes adapt to the available card width. The inspector is bounded to 280–360 px and scrolls independently. At very narrow widths it yields space to the map; this is not a mobile UI claim.
+Wheel zoom is cursor-anchored with logarithmic sensitivity 0.022. Double-click targets a readable 12 px source size at the pointer, preserving that world-space anchor. `F`/Read focuses a file's first column at readable scale. Directories fit normally; Home restores the repository overview. These operations do not change glyph positions or column layout.
 
-## Reading the map
+## Validation
 
-Directory borders define hierarchy; file title strips distinguish leaves. High zoom reveals actual text while low zoom displays sampled line structure. A single background pass is completed before glyphs, avoiding text being covered by later batched rectangles. Selection is mint, hover is bright, and non-matching files dim during path search.
-
-## Verification
-
-The CI GUI smoke test captures the real application, not a mockup: overview, source text at zoom and a compact window. Inspect these artifacts when changing font sizes, spacing, overlays, theme shaders or clipping.
+GUI regression tests must show real source glyph submissions before the first zoom event, including fonts below 7 px. They must also test a double-click directly reaching readable scale. Screenshots come from the actual native app. Runtime tests verify source snapshot stability and layout tests verify camera scaling without reflow.

@@ -1,6 +1,6 @@
 [workspace]
-members = ["apps/scope", "crates/*"]
-default-members = ["apps/scope"]
+members = ["app", "model", "analysis", "layout", "runtime", "render", "ui"]
+default-members = ["app"]
 resolver = "2"
 
 [workspace.package]
@@ -10,12 +10,12 @@ publish = false
 repository = "https://github.com/LunaStev/scope"
 
 [workspace.dependencies]
-scope-core = { path = "crates/scope-core" }
-scope-analysis = { path = "crates/scope-analysis" }
-scope-layout = { path = "crates/scope-layout" }
-scope-runtime = { path = "crates/scope-runtime" }
-scope-render = { path = "crates/scope-render" }
-scope-ui = { path = "crates/scope-ui" }
+model = { path = "model" }
+analysis = { path = "analysis" }
+layout = { path = "layout" }
+runtime = { path = "runtime" }
+render = { path = "render" }
+ui = { path = "ui" }
 makepad-widgets = "=1.0.0"
 ignore = "0.4"
 tokei = { version = "=12.1.2", default-features = false }

@@ -1,0 +1,11 @@
+[package]
+name = "render"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+model.workspace = true
+layout.workspace = true
+runtime.workspace = true
+makepad-widgets.workspace = true

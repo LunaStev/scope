@@ -1,29 +1,17 @@
 # Contributing
 
-Choose the owning module before implementing a feature. See [architecture](docs/ARCHITECTURE.md).
-
-- Models, units and invariants belong in `scope-core`.
-- Indexing and language analysis belong in `scope-analysis`.
-- Spatial math belongs in `scope-layout`.
-- Background coordination and caching belong in `scope-runtime`.
-- GPU map passes belong in `scope-render`.
-- The shell, dashboard and inspector belong in `scope-ui`.
-- CLI parsing/reporting belong in `apps/scope`.
-
-Do not add a filesystem walk to a draw method, a Makepad dependency to a headless crate, or independent line-count logic to a UI widget. New internal dependencies must be consciously reflected in `scripts/check_architecture.py`.
-
-Run:
+Use the owning root module: `model`, `analysis`, `layout`, `runtime`, `render`, `ui` or `app`. Dependencies follow [architecture](docs/ARCHITECTURE.md). Do not add filesystem access or lexical parsing to drawing code, or GUI dependencies to the model/analysis/layout/runtime layers.
 
 ```sh
-cargo test -p scope-core -p scope-analysis -p scope-layout -p scope-runtime
+cargo test -p model -p analysis -p layout -p runtime
 cargo test -p scope --no-default-features
 cargo build -p scope
 cargo fmt --all
 python3 scripts/check_architecture.py
-cargo run -- --json . > inventory.json
-python3 scripts/check_report.py inventory.json
+cargo run -- --json . > /tmp/scope-inventory.json
+python3 scripts/check_report.py /tmp/scope-inventory.json
 ```
 
-Test metric changes with unknown languages, comments inside strings, mixed comment/code lines, CRLF, empty files and embedded languages. Test cache changes for replacement, eviction and stale results. Test layout changes for stable ordering, finite geometry, empty inputs and area conservation. Include an actual GUI capture for UI changes.
+Rendering changes must preserve a single source representation. Test tiny source at overview, direct readable focus, cursor-anchored zoom, long lines, Unicode and snapshot consistency. No font-size gate or sampled preview may be reintroduced. Keep page geometry independent of the camera.
 
-Keep changes focused. Splitting files is not sufficient on its own: dependencies, ownership and testable contracts must stay clear.
+Metric changes need comment/string, unknown-language, CRLF, empty-file and embedded-language tests. Layout changes need finite geometry, stable ordering and area conservation tests. Add actual GUI captures for UI changes.

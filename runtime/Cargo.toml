@@ -1,0 +1,13 @@
+[package]
+name = "runtime"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+model.workspace = true
+analysis.workspace = true
+layout.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
