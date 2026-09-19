@@ -10,7 +10,7 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos*self.rect_size);
                 sdf.box(0.0,0.0,self.rect_size.x,self.rect_size.y,3.0);
-                sdf.fill(mix(#1b2025,#30373e,self.hover));
+                sdf.fill(mix(#1b2025,#303840,self.hover));
                 return sdf.result;
             }
         }
