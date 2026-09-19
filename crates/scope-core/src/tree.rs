@@ -1,0 +1,73 @@
+use crate::Stats;
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+pub type NodeId = usize;
+#[derive(Clone, Copy, Debug)]
+pub struct LinePreview { pub line: usize, pub indent: usize, pub width: usize, pub comment: bool }
+#[derive(Debug)]
+pub struct FileInfo { pub language: String, pub classified: bool, pub preview: Vec<LinePreview> }
+#[derive(Debug)]
+pub struct Node {
+    pub name: String,
+    pub relative: PathBuf,
+    pub parent: Option<NodeId>,
+    pub children: Vec<NodeId>,
+    pub stats: Stats,
+    pub file: Option<FileInfo>,
+}
+impl Node {
+    pub fn directory(name: String, relative: PathBuf, parent: Option<NodeId>) -> Self {
+        Self { name, relative, parent, children: Vec::new(), stats: Stats::default(), file: None }
+    }
+}
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ScanReport {
+    pub elapsed_ms: u64,
+    pub visited_files: u64,
+    pub skipped_binary: u64,
+    pub skipped_large: u64,
+    pub skipped_links: u64,
+    pub pruned_entries: u64,
+    pub unclassified_files: u64,
+    pub warning_count: u64,
+    pub warnings: Vec<String>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct LanguageStats { pub language: String, pub stats: Stats }
+#[derive(Debug)]
+pub struct Tree {
+    pub root: PathBuf,
+    pub nodes: Vec<Node>,
+    pub report: ScanReport,
+    pub languages: Vec<LanguageStats>,
+}
+impl Tree {
+    pub fn new(root: PathBuf) -> Self {
+        let name = root.file_name().unwrap_or(root.as_os_str()).to_string_lossy().into_owned();
+        Self { root, nodes: vec![Node::directory(name, PathBuf::new(), None)], report: ScanReport::default(), languages: Vec::new() }
+    }
+    pub fn totals(&self) -> Stats { self.nodes.first().map_or(Stats::default(), |n| n.stats) }
+    pub fn warning(&mut self, message: String) {
+        self.report.warning_count += 1;
+        if self.report.warnings.len() < 50 { self.report.warnings.push(message); }
+    }
+    /// Parents precede children. Recomputing is idempotent, not double-counting.
+    pub fn finish(&mut self) {
+        let mut languages = BTreeMap::<String, Stats>::new();
+        for node in &mut self.nodes {
+            if let Some(file) = &node.file {
+                languages.entry(file.language.clone()).or_default().add(node.stats);
+            } else { node.stats = Stats::default(); }
+        }
+        for id in (1..self.nodes.len()).rev() {
+            if let Some(parent) = self.nodes[id].parent {
+                let stats = self.nodes[id].stats;
+                self.nodes[parent].stats.add(stats);
+            }
+        }
+        self.languages = languages.into_iter().map(|(language, stats)| LanguageStats { language, stats }).collect();
+        self.languages.sort_by(|a,b| b.stats.lines.cmp(&a.stats.lines).then(a.language.cmp(&b.language)));
+    }
+}

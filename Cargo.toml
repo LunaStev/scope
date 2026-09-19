@@ -1,22 +1,27 @@
-[package]
-name = "scope"
-version = "0.1.0"
+[workspace]
+members = ["apps/scope", "crates/*"]
+default-members = ["apps/scope"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
 edition = "2021"
 publish = false
-description = "A local, language-independent spatial codebase explorer"
 repository = "https://github.com/LunaStev/scope"
 
-[features]
-default = ["gui"]
-gui = ["dep:makepad-widgets"]
-
-[dependencies]
+[workspace.dependencies]
+scope-core = { path = "crates/scope-core" }
+scope-analysis = { path = "crates/scope-analysis" }
+scope-layout = { path = "crates/scope-layout" }
+scope-runtime = { path = "crates/scope-runtime" }
+scope-render = { path = "crates/scope-render" }
+scope-ui = { path = "crates/scope-ui" }
+makepad-widgets = "=1.0.0"
 ignore = "0.4"
-makepad-widgets = { version = "=1.0.0", optional = true }
-
-[[bin]]
-name = "scope"
-path = "src/main.rs"
+tokei = { version = "=12.1.2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

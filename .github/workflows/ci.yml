@@ -16,35 +16,45 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb imagemagick xdotool
-      - name: Core tests
-        run: cargo +stable test --no-default-features
+      - name: Core module tests
+        run: |
+          cargo +stable test -p scope-core -p scope-analysis -p scope-layout -p scope-runtime
+          cargo +stable test -p scope --no-default-features
+      - name: Workspace dependency boundaries
+        run: python3 scripts/check_architecture.py
       - name: Build native application
-        run: cargo +stable build
-      - name: Inventory smoke test
-        run: ./target/debug/scope --scan .
+        run: cargo +stable build -p scope
+      - name: Inventory accounting test
+        run: |
+          ./target/debug/scope --json . > inventory.json
+          python3 scripts/check_report.py inventory.json
       - name: GUI startup and zoom smoke test
         run: |
-          xvfb-run -a -s '-screen 0 1600x1000x24' bash -e -c '
+          xvfb-run -a -s '-screen 0 1600x1050x24' bash -e -c '
             export LIBGL_ALWAYS_SOFTWARE=1 SCOPE_TRACE=1
             ./target/debug/scope . > gui.log 2>&1 &
             pid=$!
             trap "kill $pid 2>/dev/null || true" EXIT
-            sleep 8
+            sleep 10
             kill -0 "$pid"
-            import -window root scope-overview.png
-            xdotool mousemove 600 420 click 1
+            wid=$(xdotool search --pid "$pid" --name "Scope" | head -1)
+            xdotool windowmove "$wid" 0 0
+            import -window "$wid" scope-overview.png
+            xdotool mousemove 590 490 click 1
             for step in $(seq 1 80); do
               xdotool click 4
-              sleep 0.25
+              sleep 0.2
               kill -0 "$pid"
               if grep -Eq "scope source: .*runs=[1-9][0-9]* " gui.log; then break; fi
             done
             grep -Eq "scope source: .*runs=[1-9][0-9]* " gui.log
             sleep 2
-            import -window root scope-zoom.png
+            import -window "$wid" scope-zoom.png
             xdotool key Home
-            sleep 1
+            xdotool windowsize "$wid" 1040 760
+            sleep 2
             kill -0 "$pid"
+            import -window "$wid" scope-compact.png
           '
           cat gui.log
           ! grep -Ei 'panicked|error expanding|error applying|shader compilation failed' gui.log
@@ -57,6 +67,8 @@ jobs:
             gui.log
             scope-overview.png
             scope-zoom.png
+            scope-compact.png
+            inventory.json
             Cargo.lock
           if-no-files-found: ignore
           retention-days: 7

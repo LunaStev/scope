@@ -1,0 +1,16 @@
+[package]
+name = "scope"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "A local, language-independent spatial codebase explorer"
+
+[features]
+default = ["gui"]
+gui = ["dep:scope-ui"]
+
+[dependencies]
+scope-core.workspace = true
+scope-analysis.workspace = true
+scope-ui = { workspace = true, optional = true }
+serde_json.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "scope-ui"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+scope-core.workspace = true
+scope-analysis.workspace = true
+scope-layout.workspace = true
+scope-runtime.workspace = true
+scope-render.workspace = true
+makepad-widgets.workspace = true

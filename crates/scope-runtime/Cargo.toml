@@ -1,0 +1,13 @@
+[package]
+name = "scope-runtime"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+scope-core.workspace = true
+scope-analysis.workspace = true
+scope-layout.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
