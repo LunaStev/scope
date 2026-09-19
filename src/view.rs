@@ -182,6 +182,8 @@ impl CodeMap {
             if visible.len()>=30000 { break; }
             stack.extend(tree.nodes[id].children.iter().rev().copied());
         }
+        // Finish every map background before emitting glyphs. Reusing a quad
+        // between text calls can otherwise reorder batched draw calls.
         self.quad.begin_many_instances(cx);
         for &(id,b) in &visible {
             let node=&tree.nodes[id];
@@ -193,7 +195,10 @@ impl CodeMap {
             self.box_fill(cx,b.inset(if selected || hovered { 1.6 } else { 0.8 }),shade(base,if node.file.is_some() {0.13*dim} else {0.065}));
             if self.state.sources {
                 if let Some(file)=&node.file {
-                    if b.w>10.0 && b.h>14.0 { self.draw_preview(cx,b,file,node.stats.lines as usize,shade(base,0.70*dim)); }
+                    let (_,_,content,font)=code_geometry(b,node.stats.lines as usize);
+                    let full_text=b.w>=120.0 && b.h>=70.0 && font>=7.0 && self.state.cache.contains_key(&id);
+                    if full_text { self.box_fill(cx,content,rgb(12,19,26)); }
+                    else if b.w>10.0 && b.h>14.0 { self.draw_preview(cx,b,file,node.stats.lines as usize,shade(base,0.70*dim)); }
                 }
             }
         }
@@ -230,14 +235,15 @@ impl CodeMap {
     fn draw_document(&mut self,cx:&mut Cx2d,b:Box2,view:Box2,doc:&Document,budget:&mut usize) {
         let (cols,rows,content,font)=code_geometry(b,doc.lines.len());
         if font<7.0 || *budget==0 { return; }
-        self.box_fill(cx,content,rgb(12,19,26));
+        let before=*budget;
         let col_w=content.w/cols as f64;
         let row_h=content.h/rows.max(1) as f64;
-        let font=font.min(28.0) as f32;
-        let char_w=font as f64*0.81;
+        let raster_size=font.min(28.0) as f32;
+        let char_w=font*0.81;
         let first_row=(((view.y-content.y)/row_h).floor() as isize).max(0) as usize;
         let last_row=(((view.y+view.h-content.y)/row_h).ceil() as isize).max(0) as usize;
-        self.code.text_style.font_size=font;
+        self.code.text_style.font_size=raster_size;
+        self.code.font_scale=(font/raster_size as f64) as f32;
         for col in 0..cols {
             let x=content.x+col as f64*col_w;
             if x+col_w<view.x || x>view.x+view.w { continue; }
@@ -249,6 +255,7 @@ impl CodeMap {
                     if *budget==0 { break; }
                     let x=x+column as f64*char_w;
                     if x>=content.x+(col+1) as f64*col_w { break; }
+                    if x+text.chars().count() as f64*char_w<view.x { continue; }
                     let max_chars=((content.x+(col+1) as f64*col_w-x)/char_w).floor().max(0.0) as usize;
                     let text:String=text.chars().take(max_chars).collect();
                     if text.is_empty() { continue; }
@@ -256,6 +263,9 @@ impl CodeMap {
                     self.code.draw_abs(cx,dvec2(x,y),&text); *budget-=1;
                 }
             }
+        }
+        if std::env::var_os("SCOPE_TRACE").is_some() {
+            eprintln!("scope source: font={font:.2} cols={cols} rows={rows} visible_rows={first_row}..{last_row} runs={} content={content:?} viewport={view:?}",before-*budget);
         }
     }
     fn inspector(&mut self,cx:&mut Cx2d,b:Box2) {
