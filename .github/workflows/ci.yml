@@ -33,9 +33,14 @@ jobs:
             kill -0 "$pid"
             import -window root scope-overview.png
             xdotool mousemove 600 420 click 1
-            xdotool click --repeat 40 --delay 75 4
-            sleep 5
-            kill -0 "$pid"
+            for step in $(seq 1 80); do
+              xdotool click 4
+              sleep 0.25
+              kill -0 "$pid"
+              if grep -Eq "scope source: .*runs=[1-9][0-9]* " gui.log; then break; fi
+            done
+            grep -Eq "scope source: .*runs=[1-9][0-9]* " gui.log
+            sleep 2
             import -window root scope-zoom.png
             xdotool key Home
             sleep 1
