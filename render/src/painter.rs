@@ -1,5 +1,6 @@
 use makepad_widgets::*;
 use ::layout::Box2;
+use ::runtime::maps::Maps;
 use crate::{cache::GeometryCache,node::DrawNode,image_map::{DrawMapImage,ImageMap}};
 live_design! {
     use link::theme::*;
@@ -46,7 +47,7 @@ pub struct MapPainter {
     #[live] pub code:DrawText,
     #[rust] pub cache:GeometryCache,
     #[rust] pub images:ImageMap,
-    #[rust] pub maps:runtime::maps::Maps,
+    #[rust] pub maps:Maps,
 }
 impl LiveHook for MapPainter {fn after_apply(&mut self,_cx:&mut Cx,_apply:&mut Apply,_index:usize,_nodes:&[LiveNode]){self.cache.clear();self.images.clear();self.maps.reset();}}
 impl LiveRegister for MapPainter {fn live_register(_cx:&mut Cx){}}
