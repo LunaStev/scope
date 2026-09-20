@@ -28,7 +28,7 @@ fn main() {
     let scene = Snapshot::new(tree.clone(), AreaMetric::Lines);
     let layout_ms = start.elapsed().as_millis();
     assert_eq!(scene.rectangles.len(), tree.nodes.len());
-    for rectangle in &scene.rectangles { assert!(rectangle.area().is_finite()); }
+    for rectangle in scene.rectangles.iter() { assert!(rectangle.area().is_finite()); }
 
     let start = Instant::now();
     let reused = scan_with_progress(&root, &options, &AtomicBool::new(false), Some(&tree), |_| {})
