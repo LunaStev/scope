@@ -61,9 +61,12 @@ def run(root,cache,path,trial):
                 assert int(read['atlas_instances'])>0
                 assert sum(int(r['fallback_builds']) for r in cold)==0
                 assert all(int(r['atlas_builds'])<=12 for r in cold)
-            sp.run(['import','-window',wid,str(OUT/f'sharp-{path}.png')],check=True)
-            # Let image refinements settle separately from native completion.
+            # Submission traces precede GL presentation. Keep this race-visible
+            # capture distinct; never present it as the settled sharp output.
+            sp.run(['import','-window',wid,str(OUT/f'submitted-{path}.png')],check=True)
             wait(proc,lambda: frames(log)[-1].get('redraw')=='0' and frames(log)[-1].get('map_pending')=='0')
+            time.sleep(.15)
+            sp.run(['import','-window',wid,str(OUT/f'sharp-{path}.png')],check=True)
             warm_start=len(frames(log))
             for step in range(8):
                 xdo('click',4 if step%2==0 else 5);time.sleep(.1)
@@ -92,7 +95,7 @@ with tempfile.TemporaryDirectory(prefix='scope-sharp-') as directory:
     report=dict(fixture=dict(files=1,physical_lines=60000,language='Wave',alphabet='ASCII'),
         environment='Ubuntu CI / Xvfb / software OpenGL / release build',
         comparison='Same commit: per-run DrawText vs shared SDF glyph templates. Identical source-character slots.',
-        scope='Foreground completion includes document preparation, scheduling and 100ms double-click injection; it excludes initial overview/atlas preparation. Glyph build CPU is only foreground assembly. No GPU time or FPS.',
+        scope='Foreground completion ends at CPU submission and includes document preparation, scheduling and 100ms double-click injection; it excludes initial overview/atlas preparation. Glyph build CPU is only foreground assembly. Screenshots are taken after settling separately. No GPU completion time, display latency or FPS.',
         trials=results,aggregate={path:{'foreground_complete_ms':summary([r['foreground_complete_ms'] for r in results if r['path']==path]),
             'glyph_build_cpu_ms':summary([r['glyph_build_cpu_ms'] for r in results if r['path']==path])} for path in ('legacy','atlas')})
     (OUT/'sharp-performance.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
