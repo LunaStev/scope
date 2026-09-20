@@ -4,7 +4,7 @@ use model::{Node,Tree};
 use std::{hint::black_box,time::Instant};
 fn stats(values:&mut [f64])->String {
     values.sort_by(f64::total_cmp);let n=values.len();
-    format!("{{\"samples\":{n},\"median_us\":{:.3},\"p95_us\":{:.3},\"max_us\":{:.3}}",values[n/2],values[(n*95).div_ceil(100)-1],values[n-1])
+    format!("{{\"samples\":{n},\"median_us\":{:.3},\"p95_us\":{:.3},\"max_us\":{:.3}}}",values[n/2],values[(n*95).div_ceil(100)-1],values[n-1])
 }
 fn main() {
     let side=500usize;let total=side*side;
