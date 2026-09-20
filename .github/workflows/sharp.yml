@@ -1,0 +1,36 @@
+name: Sharp source rendering
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  sharp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxinerama-dev libasound2-dev libpulse-dev libgl1-mesa-dev libegl1-mesa-dev xvfb imagemagick xdotool
+      - name: Build and validate
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          cargo +stable test --workspace 2>&1 | tee evidence/sharp-tests.log
+          cargo +stable build --release -p scope
+          xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/sharp_benchmark.py target/release/scope 2>&1 | tee evidence/sharp-test.log
+      - name: Preserve evidence
+        if: always()
+        run: |
+          mkdir -p evidence
+          git archive HEAD > evidence/source.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scope-sharpness
+          path: evidence
+          retention-days: 7

@@ -1,4 +1,5 @@
 //! Complete source images and cached regional preparation, without a GUI.
+pub mod atlas;
 pub mod cache;
 pub mod font;
 pub mod image;

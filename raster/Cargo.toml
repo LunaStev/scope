@@ -10,6 +10,7 @@ layout.workspace = true
 analysis.workspace = true
 language.workspace = true
 fontdue = "=0.9.3"
+sdfer = "=0.2.1"
 blake3 = "1"
 png = "0.17"
 tempfile.workspace = true
