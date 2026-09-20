@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use ::layout::Box2;
 use ::runtime::maps::Maps;
+use crate::live::{DrawSourceBase,LiveText};
 use crate::{cache::GeometryCache,node::DrawNode,image_map::{DrawMapImage,ImageMap}};
 live_design! {
     use link::theme::*;
@@ -43,8 +44,8 @@ live_design! {
 pub struct MapPainter{
     #[live] pub map_font:LiveDependency,
     #[live] pub image:DrawMapImage,
-    #[live] pub source_base:crate::live::DrawSourceBase,
-    #[rust] pub live:crate::live::LiveText,
+    #[live] pub source_base:DrawSourceBase,
+    #[rust] pub live:LiveText,
     #[live] pub quad:DrawColor,
     #[live] pub node:DrawNode,
     #[live] pub label:DrawText,
@@ -53,7 +54,7 @@ pub struct MapPainter{
     #[rust] pub images:ImageMap,
     #[rust] pub maps:Maps,
 }
-impl LiveHook for MapPainter{fn after_apply(&mut self,_cx:&mut Cx,_apply:&mut Apply,_index:usize,_nodes:&[LiveNode]){self.cache.clear();self.images.clear();self.maps.reset();self.live=crate::live::LiveText::default();}}
+impl LiveHook for MapPainter{fn after_apply(&mut self,_cx:&mut Cx,_apply:&mut Apply,_index:usize,_nodes:&[LiveNode]){self.cache.clear();self.images.clear();self.maps.reset();self.live=LiveText::default();}}
 impl LiveRegister for MapPainter{fn live_register(_cx:&mut Cx){}}
 #[derive(Clone,Copy,Debug,Default)]
 pub struct RenderStats{

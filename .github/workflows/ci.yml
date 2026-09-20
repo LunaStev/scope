@@ -45,8 +45,6 @@ jobs:
           cp Cargo.lock "$before/Cargo.lock"
           cp Cargo.lock "$after/Cargo.lock"
           python3 scripts/prepare_reveal_benchmark.py "$before" "$after"
-          # Resolve local workspace edges without asking metadata to download
-          # source archives for unrelated Android/Windows targets.
           cargo +stable generate-lockfile --offline --manifest-path "$before/Cargo.toml"
           python3 - "$before/Cargo.lock" "$after/Cargo.lock" <<'PY'
           import sys,tomllib
@@ -60,6 +58,11 @@ jobs:
           CARGO_TARGET_DIR="$after/target" cargo +stable build --locked --release --manifest-path "$after/Cargo.toml" -p scope 2>&1 | tee evidence/after-build.log
           printf '%s' "$after/target/release/scope" > "$RUNNER_TEMP/scope-map-binary-path"
           xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/reveal_benchmark.py "$before/target/release/scope" "$after/target/release/scope" 2>&1 | tee evidence/reveal-test.log
+      - name: Live SDF text and warm navigation benchmark
+        run: |
+          set -o pipefail
+          binary=$(cat "$RUNNER_TEMP/scope-map-binary-path")
+          xvfb-run -a -s '-screen 0 1600x1050x24' python3 scripts/live_benchmark.py "$binary" 2>&1 | tee evidence/live-test.log
       - name: Large index and warm reuse benchmark
         run: |
           set -o pipefail
