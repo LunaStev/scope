@@ -4,8 +4,8 @@ pub const GLYPH_ADVANCE:f64=0.81;
 pub const LINE_HEIGHT:f64=1.65;
 pub const READING_SIZE:f64=12.0;
 pub const COLUMN_GAP:f64=3.0;
-pub const CHUNK_LINES:usize=32;
-pub const CHUNK_COLUMNS:usize=128;
+pub const CHUNK_LINES:usize=16;
+pub const CHUNK_COLUMNS:usize=96;
 #[derive(Clone,Debug)]pub struct SourceColumn{pub first_line:usize,pub end_line:usize,pub x:f64,pub width:f64}
 #[derive(Clone,Debug)]pub struct SourceLayout{
     pub content:Box2,pub columns:usize,pub rows:usize,pub column_width:f64,
@@ -19,8 +19,6 @@ impl SourceLayout{
         let mut content=crate::node_frame(bounds).content;content.w=content.w.max(1e-12);content.h=content.h.max(1e-12);
         let n=shape.lines().max(1);let mean=shape.mean_width().max(12.0);
         let estimate=(content.w*n as f64*LINE_HEIGHT/(content.h*(mean+COLUMN_GAP)*GLYPH_ADVANCE)).sqrt().round() as usize;
-        // Exhaust small counts and sample the full larger domain. The previous
-        // mean +/-3 search missed width-limited optima, leaving empty bottoms.
         let mut candidates:Vec<usize>=(1..=n.min(64)).collect();let max_count=n.min(2048);let mut c=65usize;
         while c<max_count{candidates.push(c);c=c.saturating_add((c/5).max(1));}candidates.push(max_count);
         for delta in 0..=8{candidates.push(estimate.saturating_sub(delta).clamp(1,max_count));candidates.push(estimate.saturating_add(delta).clamp(1,max_count));}
