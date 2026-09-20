@@ -10,19 +10,19 @@ cd scope
 cargo run --release -- /path/to/repository
 ```
 
-Update with `git pull --ff-only origin master`. The executable is `target/release/scope`. Use a release build for interactive exploration.
+Update with `git pull --ff-only origin master`. The executable is `target/release/scope`. Use a release build for interactive exploration. Headless inventory remains `--scan` or `--json`; `cargo run --no-default-features -- --json .` needs no display or map preparation. `--threads N` controls indexing workers, not map rasterization.
 
-Headless inventory is unchanged: `--scan` or `--json`. `cargo run --no-default-features -- --json .` needs no display or map preparation. `--threads N` controls indexing workers, not map rasterization.
+## Complete overview, live code up close
 
-## Prepare once, navigate the map
+Scope prepares a complete actual-source overview before revealing the map. All accepted files contribute their actual characters to a 2048-square image. Tiny characters contribute filtered coverage rather than disappearing at a glyph-count limit. No sampled bars or invented blocks stand in for code.
 
-Scope now finishes a **complete actual-source overview** before revealing the map. It reads the accepted source files and draws their actual characters into a 2048 × 2048 image. Tiny characters contribute filtered glyph coverage rather than disappearing at an arbitrary glyph-count limit. No sampled bars or invented code blocks stand in for source.
+That overview stays resident. Distant navigation scales and translates prepared images on the GPU. Near the camera, retained native GPU SDF text is layered over the same layout, so readable code is no longer only an enlarged image. Native geometry is prepared before reading density and blended gradually at the same positions. Zoom does not reflow lines or spread columns apart.
 
-That overview stays resident. Navigation scales and translates prepared images on the GPU. It does not rebuild millions of text glyphs on the UI thread. When more resolution is needed, a background worker produces 512 × 512 regional images. The existing parent image stays visible while detail arrives; detail fades in at the same coordinates. An abrupt uncached jump can briefly be soft, but is not replaced with an empty region.
+The view and nearby source are prepared ahead of time. Warm native movement reuses draw lists rather than reconstructing glyphs. Regional images now reuse a revision-checked source cache and lexical checkpoints; only intersecting columns and rows are rasterized. An immutable spatial index selects native foreground pages without walking the entire codebase each frame.
 
-The view and nearby regions are requested ahead of time. Cached resolutions are reused on return visits. Map images persist between application launches. First preparation can take longer than indexing; restarting an unchanged codebase reuses its cached overview instead of rasterizing every character again.
+This is CPU background preparation plus GPU image composition and retained SDF text, not GPU parsing or a GPU raster-preparation claim. Cold native glyph setup remains bounded work; an abrupt uncached jump can need preparation while the complete backing stays interactive. Realtime refers to rendering, not automatic on-disk edit tracking.
 
-This is **CPU background preparation plus GPU image composition**, not a claim that source parsing or map-image construction runs on the GPU. The code layout, three-character column gaps, selection, search, measurement definitions and quiet renderer footer remain.
+Map images persist between launches. Initial preparation can take longer than indexing; restarting an unchanged codebase reuses its cached overview instead of rasterizing every character again.
 
 ## Controls
 
@@ -30,10 +30,10 @@ This is **CPU background preparation plus GPU image composition**, not a claim t
 - Double-click a file: target a readable 12 px scale under the pointer.
 - `F` / Read: focus a file from its beginning; fit directories.
 - `Home` / Overview: fit the whole repository. Backspace / Up: parent.
-- Source: manually show/hide source images. Details: show/hide the inspector.
+- Source: manually show/hide source. Details: show/hide the inspector.
 - Area: non-blank lines, physical lines, code lines or text bytes.
 
-The same source is used at all resolutions. Ordinary zoom does not reflow its lines or columns. Resizing the window or changing Area can produce a different layout and therefore a new map. Search highlights matching visible paths; it does not rerasterize the whole map.
+Source columns keep three character cells of separation. Ordinary pan/zoom does not reflow code. Resize and Area changes can create another layout and map. Search highlights matching visible paths without rerasterizing the entire map. The compact toolbar, accurate statistics and quiet renderer name stay unchanged.
 
 ## Root modules
 
@@ -42,37 +42,36 @@ app/        Process entry, CLI and reports
 model/      Tree, line shapes, source and metric contracts
 language/   Language catalogue, detection, metrics and display lexing
 analysis/   Read-only parallel indexing and unchanged-record reuse
-layout/     Treemap, packed code pages and camera
-raster/     Actual-glyph rasterization, resolution tiles and persistent image cache
-runtime/    Background jobs, scene revisions and map preparation queues
-render/     GPU texture composition and native annotations
+layout/     Treemap, packed code, spatial queries and camera
+raster/     Actual-glyph images, checkpointed source reuse and persistent cache
+runtime/    Background jobs, revisions, source documents and map queues
+render/     GPU image composition, native SDF foreground and annotations
 ui/         Compact controls, summary, inspector and input
 ```
 
-All are root-level workspace packages; no `crates/` container or `scope-*` module prefixes. Only the executable package is named `scope`. Model, language, analysis, layout, raster and runtime have no Makepad dependency.
+These are root-level workspace packages, without `crates/` or `scope-*` prefixes. Only the executable package is named `scope`. Model, language, analysis, layout, raster and runtime have no Makepad dependency.
 
 ## Cache and memory
 
-Map images contain visual copies of code. They stay local. On Linux the default cache is `$XDG_CACHE_HOME/scope/maps-v1`, or `~/.cache/scope/maps-v1`. The directory is private (0700 on Unix), image writes are atomic, invalid images become cache misses, and old cache images are pruned to an approximate 512 MiB disk budget. No remote upload or interpreter execution is involved.
+Map images contain visual copies of code and stay local. Linux defaults to `$XDG_CACHE_HOME/scope/maps-v1` or `~/.cache/scope/maps-v1`. The private cache directory is 0700 on Unix. Image writes are atomic; invalid images become misses. Owned images are pruned to an approximate 512 MiB disk budget.
 
-- `SCOPE_MAP_CACHE_OFF=1`: disable persistent image caching.
-- `SCOPE_MAP_CACHE_DIR=/path/to/private/cache`: select a dedicated cache directory.
+`SCOPE_MAP_CACHE_OFF=1` disables persistent image caching. `SCOPE_MAP_CACHE_DIR=/path/to/private/cache` selects a dedicated directory.
 
-The cache key covers the root, file paths, size/modification-time revisions, world geometry, font bytes and map-format revision. This is not a content-hash check of every source file. Re-index after edits. A layout change currently invalidates the scene's map cache as a whole, not just the changed file.
+Keys include root, paths, size/modification time, geometry, font bytes and format revision. This is not content-hash validation of every source file. Re-index after edits. A changed scene layout invalidates its map images as a whole.
 
-GPU composition retains the pinned 16 MiB overview and at most 96 one-MiB detail images. Those image-byte counts are not total process or GPU-memory caps: CPU copies, driver allocations, raster working buffers, fonts and in-flight work are additional. Decoded result queues and per-paint texture uploads are bounded.
+The GPU image layer retains the 16 MiB overview and at most 96 one-MiB detail images. Native detail has a one-million-glyph / 4,096-entry geometry accounting budget and a 128 MiB source-document budget. The raster worker's separate source cache is 64 MiB. These are independent budgets, not total RAM or VRAM caps; CPU/GPU copies, fonts, spatial indices, temporary buffers and in-flight data are additional. Native detail trades extra memory and bounded initial glyph work for sharper realtime code.
 
 ## Language and metrics
 
-`language/` owns filename/compound-extension/shebang detection and lexical classification. Wave is explicitly recognised. All indexed text obeys:
+`language/` owns filename/compound-extension/shebang detection and lexical classification. Wave is explicitly recognised. Every indexed file obeys:
 
 ```text
 physical lines = code + comment-only + blank + unclassified
 ```
 
-Summary counts are repository-wide; inspector counts are for the selection. Unknown text remains unclassified. Byte units are B/KiB/MiB/GiB. Image resolution and visible detail never change measured file or line counts.
+Summary counts are repository-wide; inspector counts are selected-node data. Unknown text remains unclassified. Byte units are B/KiB/MiB/GiB. Image resolution or native detail does not change measurements.
 
-`.git`, `.hg`, `.svn` and symlinks are excluded. Ignore files are respected. Options include `--include-build`, `--no-ignore`, repeatable `--exclude NAME`, and `--max-file-mib N` (default eight). Only accepted UTF-8 text contributes to the index and map. Source changes detected during map preparation are reported instead of silently mixing old measurements with new text.
+All access is local and read-only. Metadata directories and symlinks are excluded; ignore rules are respected. Options include `--include-build`, `--no-ignore`, repeatable `--exclude NAME`, and `--max-file-mib N` (default eight). Only accepted UTF-8 text contributes. Detected revision changes are reported instead of mixing old measurements with new source.
 
 ## Validation
 
@@ -83,8 +82,8 @@ cargo build --release -p scope
 python3 scripts/check_architecture.py
 ```
 
-GUI tests verify the full source fixture before any zoom, a persistent backing image during uncached zoom, detailed image arrival, cached restart, edit invalidation and compact windows. A matched native-window benchmark separates initial complete-map preparation, cold/warm CPU submission and input-handler latency on a generated 4,000-file / four-million-line fixture. These measurements are not GPU time or FPS and do not substitute for a real Chromium/Fuchsia checkout on user hardware.
+Tests cover complete source before zoom, native glyphs at reading density, background preservation, warm native reuse without glyph rebuilding, cached restart, changed-file invalidation and compact windows. A separate release benchmark measures readable-source CPU submission and input receipt. Generated four-million-line and fifty-million-line native-window tests and 100,000-file headless tests cover other stages.
 
-Headless 50-million-line and 100,000-file fixtures continue to validate indexing separately. Linux GUI CI uses Ubuntu software OpenGL.
+CPU/input measurements are not GPU time, display latency or FPS. Synthetic CI fixtures are not actual Fuchsia/Chromium hardware tests. GUI CI uses Ubuntu software OpenGL.
 
 See [rendering](docs/RENDERING.md), [architecture](docs/ARCHITECTURE.md), [design](docs/DESIGN.md), [metrics](docs/METRICS.md) and [language](docs/LANGUAGE.md). AST subdivision, 3D navigation and filesystem watching are not implemented.
