@@ -1,0 +1,25 @@
+name: Navigation hot paths
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  navigation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Compare 250000-node picking and region traversal
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          cargo +stable run --release -p layout --example navigation | tee evidence/navigation-index.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scope-navigation
+          path: evidence
+          retention-days: 7

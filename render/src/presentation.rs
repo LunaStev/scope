@@ -9,7 +9,7 @@ use std::time::{Duration,Instant};
 struct ViewKey { generation:u64, coordinates:[u64;7], dpi:u64, query:String }
 #[derive(Default)]
 pub struct Presentation {
-    key:Option<ViewKey>, root_pending:bool, stack:Vec<(usize,usize)>,
+    key:Option<ViewKey>, root_pending:bool, stack:Vec<(usize,usize)>, cursor:Option<layout::navigation::NodeCursor>,
     pub visible:Vec<(usize,Box2)>, backgrounds:Vec<DrawList2d>,labels:Vec<DrawList2d>,label_at:usize,pub limited:bool,
 }
 impl Presentation {
@@ -17,7 +17,7 @@ impl Presentation {
         let key=ViewKey{generation:snapshot.generation,coordinates:[camera.x.to_bits(),camera.y.to_bits(),camera.scale.to_bits(),view.x.to_bits(),view.y.to_bits(),view.w.to_bits(),view.h.to_bits()],dpi:dpi.to_bits(),query:query.into()};
         if self.key.as_ref()==Some(&key){return false;}*self=Self{key:Some(key),root_pending:true,..Self::default()};true
     }
-    pub fn discovering(&self)->bool{self.root_pending||!self.stack.is_empty()}
+    pub fn discovering(&self)->bool{self.root_pending||!self.stack.is_empty()||self.cursor.as_ref().is_some_and(|c|!c.is_done())}
     pub fn unfinished(&self)->bool{self.discovering()||self.label_at<self.visible.len()}
     pub fn replay_backgrounds(&mut self,cx:&mut Cx2d,stats:&mut RenderStats){for list in &mut self.backgrounds{let _=list.begin_maybe(cx,false);stats.reused_layers+=1;}}
     pub fn replay_labels(&mut self,cx:&mut Cx2d,stats:&mut RenderStats){for list in &mut self.labels{let _=list.begin_maybe(cx,false);stats.reused_layers+=1;}}
@@ -29,15 +29,21 @@ impl Presentation {
     }
     pub fn discover_labels(&mut self,snapshot:&Snapshot,camera:Camera,view:Box2,dpi:f64,stats:&mut RenderStats){
         let started=Instant::now();
-        // Nodes too small for an annotation are already present in the image;
-        // they do not need native draw lists or a full-detail traversal.
-        while self.discovering()&&stats.node_visits<budget::NODE_VISITS&&started.elapsed()<Duration::from_millis(1){
-            stats.node_visits+=1;
-            if let Some((id,b))=self.step(snapshot,camera,view,5.0/dpi.max(0.5)){
-                if camera.project(layout::node_frame(snapshot.rectangles[id]).header).h>=9.0{self.visible.push((id,b));}
-                if self.visible.len()>=4096{self.stack.clear();self.root_pending=false;break;}
+        if self.root_pending {
+            self.root_pending=false;
+            let(x,y)=camera.unproject(view.x,view.y);
+            self.cursor=Some(snapshot.node_index.cursor(Box2::new(x,y,view.w/camera.scale,view.h/camera.scale),layout::navigation::QueryKind::Headers{min_height:9.0/camera.scale}));
+        }
+        let Some(cursor)=self.cursor.as_mut() else{return;};
+        let mut remaining=budget::NODE_VISITS.saturating_sub(stats.node_visits);let initial=remaining;
+        while !cursor.is_done()&&remaining>0&&started.elapsed()<Duration::from_millis(1){
+            if let Some(id)=cursor.next(&snapshot.node_index,&mut remaining){
+                let b=camera.project(snapshot.rectangles[id]);
+                if b.w>=5.0/dpi.max(0.5){self.visible.push((id,b));}
+                if self.visible.len()>=4096{*cursor=Default::default();self.limited=true;break;}
             }
         }
+        stats.node_visits+=initial-remaining;
     }
 }
 impl MapPainter {

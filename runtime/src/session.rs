@@ -4,14 +4,15 @@ use model::{AreaMetric,Tree};
 use layout::{self,Box2,Camera,SourceLayout};
 use std::{collections::HashSet,path::PathBuf,sync::{Arc,mpsc,atomic::{AtomicBool,AtomicU64,Ordering}}};
 static NEXT_SCENE:AtomicU64=AtomicU64::new(1);
-pub struct Snapshot{pub generation:u64,pub tree:Arc<Tree>,pub rectangles:Vec<Box2>,pub pages:Vec<Option<SourceLayout>>,pub source_index:layout::spatial::SourceIndex}
+pub struct Snapshot{pub generation:u64,pub tree:Arc<Tree>,pub rectangles:Arc<[Box2]>,pub pages:Arc<[Option<SourceLayout>]>,pub source_index:layout::spatial::SourceIndex,pub node_index:Arc<layout::navigation::NodeIndex>}
 impl Snapshot{
     pub fn new(tree:Arc<Tree>,metric:AreaMetric)->Self{Self::with_bounds(tree,metric,layout::WORLD)}
     pub fn with_bounds(tree:Arc<Tree>,metric:AreaMetric,bounds:Box2)->Self{
         let rectangles=layout::tree_layout_in(&tree,metric,bounds);
         let pages:Vec<Option<SourceLayout>>=tree.nodes.iter().zip(&rectangles).map(|(node,&bounds)|node.file.as_ref().map(|file|SourceLayout::for_shape(bounds,&file.shape))).collect();
         let source_index=layout::spatial::SourceIndex::new(&pages);
-        Self{generation:NEXT_SCENE.fetch_add(1,Ordering::Relaxed),tree,rectangles,pages,source_index}
+        let node_index=Arc::new(layout::navigation::NodeIndex::new(&tree,&rectangles));
+        Self{generation:NEXT_SCENE.fetch_add(1,Ordering::Relaxed),tree,rectangles:rectangles.into(),pages:pages.into(),source_index,node_index}
     }
 }
 type JobResult=Result<(Snapshot,AreaMetric),String>;
@@ -81,11 +82,11 @@ impl Session{
     pub fn read_at(&mut self,id:usize,x:f64,y:f64){let page=self.snapshot.as_ref().and_then(|s|s.pages.get(id)).and_then(Option::as_ref);if let Some(page)=page{self.selected=Some(id);self.focus_pending=None;self.camera.read_at(page,x,y);}else{self.focus(id);}}
     pub fn apply_focus(&mut self,viewport:Box2){let Some(id)=self.focus_pending.take()else{return;};let Some(s)=&self.snapshot else{return;};if let Some(Some(page))=s.pages.get(id){self.camera.read_page(page,viewport);}else if let Some(&b)=s.rectangles.get(id){self.camera.fit(b,viewport);}}
     pub fn parent(&mut self){let id=self.snapshot.as_ref().and_then(|s|s.tree.nodes.get(self.selected.unwrap_or(0))).and_then(|n|n.parent).unwrap_or(0);self.focus(id);}
-    pub fn hit(&self,x:f64,y:f64)->Option<usize>{let s=self.snapshot.as_ref()?;let(x,y)=self.camera.unproject(x,y);layout::hit_test(&s.tree,&s.rectangles,x,y)}
+    pub fn hit(&self,x:f64,y:f64)->Option<usize>{let s=self.snapshot.as_ref()?;let(x,y)=self.camera.unproject(x,y);s.node_index.hit(x,y)}
 }
 #[cfg(test)]mod tests{
     use super::*;
-    #[test]fn initial_snapshot_is_lightweight(){let t=tempfile::tempdir().unwrap();std::fs::write(t.path().join("x.wave"),"fun main() {}\n".repeat(1000)).unwrap();let tree=analysis::scan(t.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap();assert!(tree.source_memory_bytes<6000);let s=Snapshot::new(Arc::new(tree),AreaMetric::Lines);assert!(s.pages.iter().any(Option::is_some));}
+    #[test]fn initial_snapshot_is_lightweight(){let t=tempfile::tempdir().unwrap();std::fs::write(t.path().join("x.wave"),"fun main() {}\n".repeat(1000)).unwrap();let tree=analysis::scan(t.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap();assert!(tree.source_memory_bytes<6000);let s=Snapshot::new(Arc::new(tree),AreaMetric::Lines);assert!(s.pages.iter().any(Option::is_some));assert!(Arc::ptr_eq(&s.pages,&s.pages.clone()));}
     #[test]fn layout_reuses_shapes_but_changes_generation(){let t=tempfile::tempdir().unwrap();std::fs::write(t.path().join("x.rs"),"let x=1;\n").unwrap();let tree=Arc::new(analysis::scan(t.path(),&ScanOptions::default(),&AtomicBool::new(false)).unwrap());let a=Snapshot::new(tree.clone(),AreaMetric::Lines);let b=Snapshot::new(tree.clone(),AreaMetric::Bytes);assert!(Arc::ptr_eq(&a.tree,&b.tree));assert_ne!(a.generation,b.generation);}
     #[test]fn obsolete_initial_aspect_is_never_published(){let mut session=Session::default();session.bounds=Box2::new(0.0,0.0,8000.0,2560.0);let snapshot=Snapshot::new(Arc::new(Tree::new("fixture".into())),AreaMetric::default());let(tx,rx)=mpsc::channel();session.rx=Some(rx);tx.send(JobEvent::Complete(Ok((snapshot,AreaMetric::default())))).unwrap();session.poll();assert!(session.snapshot.is_none());assert!(session.busy());let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);while session.busy()&&std::time::Instant::now()<deadline{std::thread::sleep(std::time::Duration::from_millis(1));session.poll();}assert_eq!(session.snapshot.as_ref().unwrap().rectangles[0],session.bounds);}
 }

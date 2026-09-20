@@ -20,6 +20,7 @@ impl MapPainter{
         }
         self.maps.poll();let camera=session.camera;let world=snapshot.rectangles[0];let dpi=cx.current_dpi_factor();
         let desired=if session.sources{raster::tile::requests(world,camera,view,dpi)}else{Vec::new()};let protected:HashSet<_>=desired.iter().copied().collect();
+        self.maps.request(&desired,&self.images.resident());
         if let Some(update)=self.maps.take_image(){self.images.upload(cx,update,world,&protected);stats.texture_uploads=1;}
         let(done,total)=self.maps.progress();stats.map_completed=done;stats.map_total=total;stats.map_ready=self.images.ready();stats.map_cache_hit=self.maps.cache_hit;stats.map_errors=self.maps.errors;
         if !self.images.ready(){
@@ -29,7 +30,7 @@ impl MapPainter{
         }
         if self.images.source_mode!=session.sources{self.images.source_mode=session.sources;self.cache.scene=Presentation::default();self.live=crate::live::LiveText::default();}
         if session.sources{
-            let resident=self.images.resident();self.maps.request(&desired,&resident);let(count,fading)=self.images.draw(cx,&mut self.image,camera,view,1.0);
+            let(count,fading)=self.images.draw(cx,&mut self.image,camera,view,1.0);
             stats.image_tiles=count;stats.reused_chunks=count;stats.source_lines=self.maps.prepared_lines as usize;stats.needs_redraw=fading||self.maps.has_images();
         }
         self.cache.prepare(snapshot.generation,dpi);
@@ -46,7 +47,7 @@ impl MapPainter{
         let sample=session.selected.and_then(|id|snapshot.pages.get(id)).and_then(Option::as_ref).or_else(||snapshot.pages.iter().flatten().next());
         if stats.max_font==0.0{if let Some(page)=sample{stats.min_font=page.font_size*camera.scale;stats.max_font=stats.min_font;}}
         stats.cpu_submit_ms=started.elapsed().as_secs_f64()*1000.0;
-        if std::env::var_os("SCOPE_TRACE").is_some(){eprintln!("scope frame: nodes={} lines={} runs={} scale={:.6} font_min={:.4} font_max={:.4} reused={} built={} pending={} waiting=0 limited=0 glyphs={} cpu_ms={:.3} map_ready=1 image_tiles={} uploads={} map_pending={} map_errors={} map_cache_hit={} map_prepare_ms={} redraw={} representation=hybrid-sdf native_glyphs={} native_resident={} native_reused={} native_pending={}",stats.visible_nodes,stats.source_lines,stats.glyph_runs,camera.scale,stats.min_font,stats.max_font,stats.reused_chunks,stats.built_chunks,stats.image_pending,stats.built_glyphs,stats.cpu_submit_ms,stats.image_tiles,stats.texture_uploads,stats.image_pending,stats.map_errors,usize::from(stats.map_cache_hit),self.maps.prepare_ms,usize::from(stats.needs_redraw),stats.live_drawn,stats.live_glyphs,stats.live_reused,stats.live_pending);}
+        if std::env::var_os("SCOPE_TRACE").is_some(){eprintln!("scope frame: nodes={} lines={} runs={} scale={:.6} font_min={:.4} font_max={:.4} reused={} built={} pending={} waiting=0 limited=0 glyphs={} cpu_ms={:.3} map_ready=1 image_tiles={} uploads={} map_pending={} map_errors={} map_cache_hit={} map_prepare_ms={} redraw={} representation=hybrid-sdf native_glyphs={} native_resident={} native_reused={} native_pending={} map_replans={} cancelled_details={} native_queries={}",stats.visible_nodes,stats.source_lines,stats.glyph_runs,camera.scale,stats.min_font,stats.max_font,stats.reused_chunks,stats.built_chunks,stats.image_pending,stats.built_glyphs,stats.cpu_submit_ms,stats.image_tiles,stats.texture_uploads,stats.image_pending,stats.map_errors,usize::from(stats.map_cache_hit),self.maps.prepare_ms,usize::from(stats.needs_redraw),stats.live_drawn,stats.live_glyphs,stats.live_reused,stats.live_pending,self.maps.replans,self.maps.cancelled_details,self.live.queries);}
         stats
     }
 }

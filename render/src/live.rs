@@ -29,16 +29,32 @@ live_design! {
 #[repr(C)]
 pub struct DrawSourceBase {#[deref] pub draw_super:DrawColor}
 #[derive(Default)]
-pub struct LiveText {key:Option<[u64;8]>,pub candidates:usize}
-/// Prepare at 1.5 physical pixels and blend between 3 and 6, without reflow.
+pub struct LiveText {key:Option<[u64;8]>,window:Option<LiveWindow>,pub candidates:usize,pub queries:u64}
+#[derive(Clone,Copy)]
+struct LiveWindow {bounds:Box2,min_font:f64,generation:u64,dpi:u64}
+impl LiveWindow {
+    fn covers(self,world:Box2,min_font:f64,generation:u64,dpi:f64)->bool{
+        self.generation==generation&&self.dpi==dpi.to_bits()&&min_font>=self.min_font
+            &&self.bounds.contains(world.x,world.y)&&self.bounds.contains(world.x+world.w,world.y+world.h)
+    }
+}
+/// Prepare ahead and blend between 3 and 6 physical pixels, without reflow.
 pub fn ink_opacity(font:f64,dpi:f64)->f32{let t=((font*dpi-3.0)/3.0).clamp(0.0,1.0);(t*t*(3.0-2.0*t)) as f32}
 impl LiveText {
     fn prepare(&mut self,snapshot:&Snapshot,camera:Camera,view:Box2,dpi:f64,queue:&mut SourceQueue){
         let key=[snapshot.generation,camera.x.to_bits(),camera.y.to_bits(),camera.scale.to_bits(),view.x.to_bits(),view.y.to_bits(),view.w.to_bits(),view.h.to_bits()^dpi.to_bits()];
-        if self.key==Some(key){return;}self.key=Some(key);*queue=SourceQueue::default();
-        let halo=Box2::new(view.x-view.w*0.12,view.y-view.h*0.12,view.w*1.24,view.h*1.24);
+        if self.key==Some(key){return;}self.key=Some(key);
+        let(vx,vy)=camera.unproject(view.x,view.y);let visible=Box2::new(vx,vy,view.w/camera.scale,view.h/camera.scale);
+        let min_font=1.5/(camera.scale*dpi.max(0.5));
+        if !queue.limited&&self.candidates<256&&self.window.is_some_and(|w|w.covers(visible,min_font,snapshot.generation,dpi)){return;}
+        *queue=SourceQueue::default();self.queries+=1;
+        let halo=Box2::new(view.x-view.w*0.20,view.y-view.h*0.20,view.w*1.40,view.h*1.40);
         let(x,y)=camera.unproject(halo.x,halo.y);let world=Box2::new(x,y,halo.w/camera.scale,halo.h/camera.scale);
-        let mut ids=snapshot.source_index.query(world,1.5/(camera.scale*dpi.max(0.5)),256);
+        // Prepare one octave ahead. Camera motion inside this world-space guard
+        // band reuses the in-progress cursor instead of restarting it each pixel.
+        let prepare_font=min_font*0.5;
+        self.window=Some(LiveWindow{bounds:world,min_font:prepare_font,generation:snapshot.generation,dpi:dpi.to_bits()});
+        let mut ids=snapshot.source_index.query(world,prepare_font,256);
         let centre=camera.unproject(view.x+view.w*0.5,view.y+view.h*0.5);
         ids.sort_by(|&a,&b|{
             let score=|id:usize|{let p=snapshot.pages[id].as_ref().unwrap();
@@ -63,5 +79,12 @@ impl MapPainter{
 }
 #[cfg(test)]mod tests{
     use super::*;
+    #[test]fn nearby_camera_motion_keeps_the_prefetch_window(){
+        let w=LiveWindow{bounds:Box2::new(-20.0,-20.0,140.0,140.0),min_font:0.75,generation:1,dpi:1.0_f64.to_bits()};
+        for i in 0..20{assert!(w.covers(Box2::new(i as f64,0.0,100.0,100.0),1.5,1,1.0));}
+        assert!(!w.covers(Box2::new(30.0,0.0,100.0,100.0),1.5,1,1.0));
+        assert!(!w.covers(Box2::new(0.0,0.0,10.0,10.0),0.1,1,1.0));
+        assert!(!w.covers(Box2::new(0.0,0.0,10.0,10.0),1.5,2,1.0));
+    }
     #[test]fn opacity_is_continuous_and_dpi_aware(){assert_eq!(ink_opacity(2.0,1.0),0.0);assert_eq!(ink_opacity(6.0,1.0),1.0);assert_eq!(ink_opacity(3.0,2.0),1.0);let mut previous=0.0;for i in 0..1000{let value=ink_opacity(i as f64/100.0,1.0);assert!(value>=previous);previous=value;}}
 }
